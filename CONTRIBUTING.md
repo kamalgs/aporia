@@ -59,5 +59,5 @@ The app auto-detects the API key format:
 Set in `~/projects/nomad/jobs/terraform.tfvars`:
 ```hcl
 fireworks_api_key = "your-key"
-aporia_model      = "accounts/fireworks/models/llama-v3p1-405b-instruct"
+aporia_model      = "accounts/fireworks/models/kimi-k2p6"
 ```
