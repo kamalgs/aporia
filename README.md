@@ -44,7 +44,7 @@ By default the server runs a deterministic `FakeAgent` so it works offline. To u
 
 ```bash
 export OPENROUTER_API_KEY=sk-or-v1-...
-export TUTOR_MODEL=openai/gpt-4o-mini
+export TUTOR_MODEL=accounts/fireworks/models/kimi-k2p6
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000
 ```
 
