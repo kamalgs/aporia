@@ -31,29 +31,32 @@ if os.environ.get("ENV", "dev") == "dev":
 
 
 def _pick_llm_agent() -> LlmAgent:
-    # Fireworks (frontier-class models, OpenAI-compatible)
     fw_key = os.environ.get("FIREWORKS_API_KEY")
     fw_model = os.environ.get("FIREWORKS_MODEL")
-    if fw_key and fw_model:
-        return LlmAgent(
-            model_name=fw_model,
-            api_key=fw_key,
-            base_url="https://api.fireworks.ai/inference/v1",
-        )
-
-    # OpenRouter fallback
     or_key = os.environ.get("OPENROUTER_API_KEY")
     or_model = os.environ.get("TUTOR_MODEL")
-    if or_key and or_model:
+
+    key = fw_key or or_key
+    model = fw_model or or_model
+    if not key or not model:
+        raise RuntimeError(
+            "No LLM credentials configured. Set FIREWORKS_API_KEY + FIREWORKS_MODEL, "
+            "or OPENROUTER_API_KEY + TUTOR_MODEL."
+        )
+
+    # OpenRouter keys look like sk-or-v1-...; they usually proxy frontier models.
+    # Fireworks native keys look like fw-... or sk-1... .
+    if key.startswith("sk-or-v1-"):
         return LlmAgent(
-            model_name=or_model,
-            api_key=or_key,
+            model_name=model,
+            api_key=key,
             base_url="https://openrouter.ai/api/v1",
         )
 
-    raise RuntimeError(
-        "No LLM credentials configured. Set FIREWORKS_API_KEY + FIREWORKS_MODEL, "
-        "or OPENROUTER_API_KEY + TUTOR_MODEL."
+    return LlmAgent(
+        model_name=model,
+        api_key=key,
+        base_url="https://api.fireworks.ai/inference/v1",
     )
 
 

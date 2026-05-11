@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import os
 import random
 from abc import ABC, abstractmethod
 from typing import List
 
-from pydantic_ai import Agent
-from pydantic_ai.models.openai import OpenAIModel
+from openai import AsyncOpenAI
 
 from app.models import TutorStep, Problem, Evaluation, TurnData, StudentAnswerPayload
 
@@ -71,28 +72,42 @@ class TutorAgent(ABC):
 
 class LlmAgent(TutorAgent):
     def __init__(self, model_name: str | None = None, api_key: str | None = None, base_url: str | None = None):
-        model_name = model_name or os.environ.get("TUTOR_MODEL", "openai/gpt-4o-mini")
+        self.model_name = model_name or os.environ.get("TUTOR_MODEL", "openai/gpt-4o-mini")
         api_key = api_key or os.environ.get("OPENROUTER_API_KEY")
         base_url = base_url or "https://openrouter.ai/api/v1"
         if not api_key:
             raise RuntimeError("LLM API key not set")
-        model = OpenAIModel(
-            model_name,
-            base_url=base_url,
-            api_key=api_key,
-        )
-        self._agent = Agent(model, result_type=TutorStep, system_prompt=SYSTEM_PROMPT)
+        self._client = AsyncOpenAI(base_url=base_url, api_key=api_key)
+        self._system = SYSTEM_PROMPT
+
+    async def _call(self, user_content: str) -> TutorStep:
+        loop = asyncio.get_event_loop()
+        # Run sync client call in thread pool so we don't block the loop.
+        def _sync_call():
+            import openai
+            client = openai.OpenAI(base_url=self._client.base_url, api_key=self._client.api_key)
+            response = client.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {"role": "system", "content": self._system},
+                    {"role": "user", "content": user_content},
+                ],
+                response_format={"type": "json_object"},
+            )
+            raw = response.choices[0].message.content or "{}"
+            return json.loads(raw)
+        data = await loop.run_in_executor(None, _sync_call)
+        # Validate shape via Pydantic
+        return TutorStep.model_validate(data)
 
     async def start(self) -> TutorStep:
-        result = await self._agent.run(
+        return await self._call(
             "Start a new tutoring session. Ask a 2-digit addition diagnostic problem that requires carrying in the ones place."
         )
-        return result.data
 
     async def next(self, history: List[TurnData]) -> TutorStep:
         prompt = f"Session transcript so far:\n{_format_history(history)}\n\nEvaluate the latest student answer and decide the next tutor action."
-        result = await self._agent.run(prompt)
-        return result.data
+        return await self._call(prompt)
 
 
 # ---- Deterministic Fake Agent (for tests / offline demos) ----

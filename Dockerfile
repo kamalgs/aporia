@@ -36,7 +36,7 @@ COPY --from=frontend /app/frontend/dist ./static
 # Make static dir import-friendly
 ENV FRONTEND_STATIC_DIR=/app/static
 ENV PYTHONUNBUFFERED=1
+ENV PORT=8000
+EXPOSE ${PORT}
 
-EXPOSE 8000
-
-CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD uv run uvicorn app.main:app --host 0.0.0.0 --port ${PORT}
