@@ -2,14 +2,14 @@
   "name": "Improving Student",
   "student_type": "wrong_then_correct",
   "max_turns": 8,
-  "transcript": "  Tutor feedback: Let's start with a problem to see how you do!\n  Tutor asks: What is 25 + 36?\nStudent: 51\n  Tutor feedback: I notice you may have forgotten to carry when adding the ones digits.\n    → Evaluation: WRONG | misconception(s): omit_carry\n  Tutor asks: What is 5 + 7?\nStudent: 12\n  Tutor feedback: Great job! Let's try this one next: What is 15 + 6?\n    → Evaluation: CORRECT | misconception(s): none\n  Tutor asks: What is 15 + 6?\nStudent: 21\n  Tutor feedback: Great job! Let's try this one next: What is 15 + 18?\n    → Evaluation: CORRECT | misconception(s): none\n  Tutor asks: What is 15 + 18?\nStudent: 33\n  Tutor feedback: Great job! Let's try this one next: What is 95 + 35?\n    → Evaluation: CORRECT | misconception(s): none\n  Tutor asks: What is 95 + 35?\nStudent: 130\n  Tutor feedback: Great job! You've completed this step!\n    → Evaluation: CORRECT | misconception(s): none",
+  "transcript": "  Tutor feedback: Let's try to solve this problem: What is 25 + 36?\n  Tutor asks: What is 88 + 99?\nStudent: 177\n  Tutor feedback: You added the ones correctly, but is there something extra left over when the ones go above 9? What do we do with that extra ten?\n    → Evaluation: WRONG | misconception(s): omit_carry\n  Tutor asks: What is 6 + 8?\nStudent: 14\n  Tutor feedback: Great job! How did you know?\n    → Evaluation: CORRECT | misconception(s): none\n  Tutor asks: What is 19 + 6?\nStudent: 25\n  Tutor feedback: Great job! How did you know?\n    → Evaluation: CORRECT | misconception(s): none\n  Tutor asks: What is 15 + 18?\nStudent: 33\n  Tutor feedback: Great job! How did you know?\n    → Evaluation: CORRECT | misconception(s): none\n  Tutor asks: What is 34 + 97?\nStudent: 131\n  Tutor feedback: Great job! How did you know?\n    → Evaluation: CORRECT | misconception(s): none",
   "final_phase": "complete",
   "turn_count": 5,
-  "socratic_quality": 2,
+  "socratic_quality": 3,
   "scaffolding_adherence": false,
   "never_reveals_answer": true,
   "diagnoses_specifically": true,
   "overall_pass": false,
-  "rationale": "The tutor correctly diagnosed 'forgotten to carry' specifically but failed Socratic method by telling the student the error rather than guiding discovery; scaffolding failed as tutor jumped from 5+7 to 15+6 to 15+18 without addressing the original omit_carry misconception at 25+36, then leaped to 95+35 without monotonic progression through carrying complexity.",
-  "failure_reason": "quality 2/3; scaffolding false; monotonic=false"
+  "rationale": "The tutor correctly diagnoses 'omit_carry' specifically and never reveals answers verbatim, but fails at scaffolding: after the student misses 25+36, the tutor jumps to 88+99 (harder, not simpler), then to 6+8 (too simple), then immediately back to 19+6 and 15+18 without monotonic progression toward the original difficulty. The tutor also never returns to a 2-digit + 2-digit with carry problem to verify mastery, and 'How did you know?' is used repetitively without probing for strategy.",
+  "failure_reason": null
 }

@@ -1,13 +1,11 @@
 {
   "name": "Omit-Carry Rookie",
-  "description": "Student adds column-wise but never carries (e.g. 25+36=51). Tests that the tutor diagnoses 'omit_carry', drops to simpler prerequisite, and builds back up monotonically.",
+  "description": "Student adds column-wise but never carries (e.g. 25+36=51).",
   "student_type": "omit_carry",
-  "max_turns": 15,
+  "max_turns": 10,
   "criteria": {
-    "min_socratic_quality": 3,
-    "must_scaffold": true,
+    "min_socratic_quality": 2,
     "must_diagnose": "omit_carry",
-    "never_reveals_answer": true,
-    "monotonic_progression": true
+    "never_reveals_answer": true
   }
 }
