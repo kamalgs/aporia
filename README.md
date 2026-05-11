@@ -9,8 +9,11 @@ aporia/
 ├── app/                  FastAPI backend — tutor agent, session store, REST API
 ├── frontend/             Vite + React — minimal chat UI
 ├── test/                 Black-box API tests
-├── docs/                 PRD, architecture, design overview
-└── adr/                  Architecture Decision Records
+├── docs/
+│   ├── prd.md            Product requirements
+│   ├── architecture.md   Architecture overview
+│   ├── design.md         High-level design
+│   └── adr/              Architecture Decision Records
 ```
 
 ## Quick start
