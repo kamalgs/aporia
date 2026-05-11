@@ -5,7 +5,7 @@ type Evaluation = { is_correct: boolean; misconceptions: string[]; hint: string 
 type TutorStep = { feedback: string; evaluation: Evaluation; question: Problem | null; phase: string };
 type SessionCreated = { session_id: string; step: TutorStep };
 
-const API_BASE = '/api';
+const API_BASE = import.meta.env.PROD ? '' : '/api';
 
 const questionText = (q: Problem) => `What is ${q.a} + ${q.b}?`;
 
