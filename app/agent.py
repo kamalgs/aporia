@@ -106,6 +106,7 @@ class LlmAgent(TutorAgent):
         self._diag: Problem | None = None
         self._phase_chain: list[str] = []
         self._consecutive_correct: int = 0
+        self._consecutive_wrong: int = 0
         self._peak_difficulty: int = 0
         self._mastered_level: int = 0   # highest difficulty solved correctly
         self._last_was_correct: bool | None = None
@@ -130,7 +131,9 @@ class LlmAgent(TutorAgent):
         self._peak_difficulty = max(self._peak_difficulty, d)
         if is_correct:
             self._consecutive_correct += 1
+            self._consecutive_wrong = 0
         else:
+            self._consecutive_wrong += 1
             self._consecutive_correct = 0
         # Track the highest difficulty that the student has *correctly solved*.
         if is_correct and d > self._mastered_level:
@@ -141,6 +144,7 @@ class LlmAgent(TutorAgent):
         parts = [
             f"Peak scaffold reached: {self._peak_difficulty}",
             f"Consecutive correct: {self._consecutive_correct}",
+            f"Consecutive wrong: {self._consecutive_wrong}",
             f"Last answer was correct: {self._last_was_correct}",
         ]
         if self._diag:
@@ -151,6 +155,7 @@ class LlmAgent(TutorAgent):
         self._diag = None
         self._phase_chain = []
         self._consecutive_correct = 0
+        self._consecutive_wrong = 0
         self._peak_difficulty = 0
         self._mastered_level = 0
         self._last_was_correct = None
@@ -187,6 +192,25 @@ class LlmAgent(TutorAgent):
             )
 
         self._update_state(last_problem, local_correct)
+
+        # ---- escape hatch: flag for human intervention after 3 consecutive wrong answers ----
+        if self._consecutive_wrong >= 3:
+            return TutorStep(
+                feedback=(
+                    "You have been getting these wrong for a few tries now — "
+                    "that is perfectly okay! Let me connect you with a human tutor "
+                    "who can walk through this together with you."
+                ),
+                evaluation=Evaluation(
+                    is_correct=local_correct,
+                    misconceptions=local_miscs,
+                    hint="Handed off to human tutor after 3 consecutive wrong answers.",
+                ),
+                question=None,
+                phase="complete",  # type: ignore
+                needs_human=True,
+            )
+
         last_d = self._difficulty(last_problem)
 
         # ---- compute the recommended next problem (code-driven scaffold) ----
@@ -217,9 +241,9 @@ class LlmAgent(TutorAgent):
 
         # ---- guard-rails: override LLM question / phase / eval with code-computed values ----
         if recommended_next is None:
-            enforced = {"phase": "complete", "question": None, "evaluation": step.evaluation}
+            enforced = {"phase": "complete", "question": None, "needs_human": False, "evaluation": step.evaluation}
         else:
-            enforced = {"phase": recommended_phase, "question": recommended_next, "evaluation": step.evaluation}
+            enforced = {"phase": recommended_phase, "question": recommended_next, "needs_human": False, "evaluation": step.evaluation}
 
         # Override evaluation with code-verified values.
         # For WRONG answers, also override feedback with the code-generated hint

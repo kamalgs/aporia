@@ -2,7 +2,7 @@
   "name": "Perfect Student",
   "student_type": "always_correct",
   "max_turns": 8,
-  "transcript": "  Tutor feedback: Let's start with a problem! What is 25 + 36?\n  Tutor asks: What is 88 + 99?\nStudent: 187\n  Tutor feedback: Well done on that addition! What strategy did you use?\n    → Evaluation: CORRECT | misconception(s): none\n  Tutor asks: What is 48 + 15?\nStudent: 63\n  Tutor feedback: Well done on that addition! What strategy did you use?\n    → Evaluation: CORRECT | misconception(s): none",
+  "transcript": "  Tutor feedback: Let's solve a problem together! Can you find the sum of 25 and 36?\n  Tutor asks: What is 88 + 99?\nStudent: 187\n  Tutor feedback: Well done! How did you know that?\n    → Evaluation: CORRECT | misconception(s): none\n  Tutor asks: What is 93 + 89?\nStudent: 182\n  Tutor feedback: Well done! How did you know that?\n    → Evaluation: CORRECT | misconception(s): none",
   "final_phase": "complete",
   "turn_count": 2,
   "socratic_quality": 2,
@@ -10,6 +10,6 @@
   "never_reveals_answer": true,
   "diagnoses_specifically": false,
   "overall_pass": false,
-  "rationale": "The tutor fails Socratically: after the student correctly answers 88+99 (a hard problem with carrying), the tutor jumps to 48+15 without probing understanding or building from prerequisites, and never asks diagnostic questions when answers are correct—merely praising with 'Well done!' and generic 'What strategy did you use?' The tutor also skips entirely past the first problem (25+36) without student response, showing no actual scaffolding or misconception diagnosis.",
+  "rationale": "The tutor never engages with the student's initial wrong answer to 25+36 (skipped entirely), then only asks follow-up questions after correct answers without probing reasoning ('How did you know that?' is generic). No Socratic guidance on the missed problem, no diagnosis of why 25+36 was wrong, and no scaffolding from simpler problems when the student struggled.",
   "failure_reason": null
 }
