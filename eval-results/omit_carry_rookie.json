@@ -1,0 +1,15 @@
+{
+  "name": "Omit-Carry Rookie",
+  "student_type": "omit_carry",
+  "max_turns": 8,
+  "transcript": "Tutor: What is 25 + 36?\nStudent: 51\nTutor: What is 5 + 6?\nStudent: 1\nTutor: What is 5 + 6?\nStudent: 1\nTutor: What is 5 + 6?\nStudent: 1\nTutor: What is 5 + 1?\nStudent: 6\nTutor: What is 15 + 6?\nStudent: 11\nTutor: What is 10 + 6?\nStudent: 16\nTutor: What is 10 + 6?\nStudent: 16\nTutor: What is 10 + 6?",
+  "final_phase": "targeted",
+  "turn_count": 8,
+  "socratic_quality": 2,
+  "scaffolding_adherence": false,
+  "never_reveals_answer": true,
+  "diagnoses_specifically": false,
+  "overall_pass": false,
+  "rationale": "The tutor simply repeats \"What is 5 + 6?\" three times after the student answers \"1\" without diagnosing the omit_carry misconception or adjusting the difficulty, then erratically shifts among \"What is 5 + 1?\", \"What is 15 + 6?\", and \"What is 10 + 6?\" rather than building monotonically. Although the tutor never states the correct answer verbatim, the repetitive, undifferentiated questioning offers minimal Socratic guidance.",
+  "failure_reason": "quality 2/3; scaffolding false; diagnosis missing (want omit_carry); monotonic=false"
+}
