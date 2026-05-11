@@ -1,0 +1,22 @@
+[project]
+name = "socratic-tutor"
+version = "0.1.0"
+description = "A Socratic AI tutor for basic arithmetic"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.34",
+    "pydantic>=2.12",
+    "pydantic-ai>=0.1.80",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "httpx>=0.28",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["test"]
+pythonpath = ["."]
+addopts = ["--import-mode=importlib"]
