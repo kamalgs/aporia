@@ -8,6 +8,7 @@ dependencies = [
     "uvicorn>=0.34",
     "pydantic>=2.12",
     "pydantic-ai>=0.1.80",
+    "gradio>=6.14.0",
 ]
 
 [project.optional-dependencies]

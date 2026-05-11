@@ -24,8 +24,8 @@ class TutorStep(BaseModel):
 
 
 class StudentAnswerPayload(BaseModel):
-    value: int
-    explanation: str | None = None
+    text: str  # free-form student message (answer + explanation)
+    value: int | None = None  # parsed numeric answer (optional — backend extracts if missing)
 
 
 class TurnData(BaseModel):

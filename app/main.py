@@ -7,6 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
+import re
+
 from app.agent import TutorAgent, LlmAgent, FakeAgent
 from app.models import (
     StudentAnswerPayload,
@@ -16,6 +18,12 @@ from app.models import (
     SessionCreatedResponse,
 )
 from app.session_store import SessionStore, get_store
+
+
+def _extract_number(text: str) -> int | None:
+    """Extract the first integer from free-form student text."""
+    m = re.search(r'-?\d+', text)
+    return int(m.group()) if m else None
 
 app = FastAPI(title="Socratic Tutor")
 
@@ -91,6 +99,12 @@ async def submit_answer(
     history = store.all_turns(session_id)
     if not history:
         raise HTTPException(status_code=404, detail="Session not found or empty")
+
+    # If the student only sent text, extract the numeric answer automatically.
+    if payload.value is None:
+        extracted = _extract_number(payload.text)
+        if extracted is not None:
+            payload = StudentAnswerPayload(text=payload.text, value=extracted)
 
     store.append(session_id, TurnData(role="student", answer=payload))
     updated_history = store.all_turns(session_id)

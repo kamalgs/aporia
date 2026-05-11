@@ -36,7 +36,7 @@ def test_correct_diagnostic_moves_to_mastery():
     create = client.post("/sessions").json()
     sid = create["session_id"]
     # correct answer to 88+99
-    resp = client.post(f"/sessions/{sid}/answer", json={"value": 187})
+    resp = client.post(f"/sessions/{sid}/answer", json={"text": "187"})
     assert resp.status_code == 200
     step = resp.json()
     assert step["phase"] == "mastery"
@@ -49,7 +49,7 @@ def test_omit_carry_diagnosed_and_pivots_to_targeted():
     create = client.post("/sessions").json()
     sid = create["session_id"]
     # omit carry: 88+99 without carrying = 177
-    resp = client.post(f"/sessions/{sid}/answer", json={"value": 177})
+    resp = client.post(f"/sessions/{sid}/answer", json={"text": "177"})
     assert resp.status_code == 200
     step = resp.json()
     assert step["phase"] == "targeted"
@@ -64,15 +64,20 @@ def test_targeted_mastery_completes_session():
     sid = create["session_id"]
 
     # 1. diagnostic wrong (omit carry)
-    step = client.post(f"/sessions/{sid}/answer", json={"value": 177}).json()
+    step = client.post(f"/sessions/{sid}/answer", json={"text": "177"}).json()
     assert step["phase"] == "targeted"
-    a, b = step["question"]["a"], step["question"]["b"]
-    # 2. targeted correct
-    step = client.post(f"/sessions/{sid}/answer", json={"value": a + b}).json()
+
+    # Scaffolded steps: may take 1-4 correct answers to reach mastery
+    turns = 0
+    while step["phase"] == "targeted" and turns < 10:
+        a, b = step["question"]["a"], step["question"]["b"]
+        step = client.post(f"/sessions/{sid}/answer", json={"text": str(a + b)}).json()
+        turns += 1
+
     assert step["phase"] == "mastery"
     a, b = step["question"]["a"], step["question"]["b"]
-    # 3. mastery correct
-    step = client.post(f"/sessions/{sid}/answer", json={"value": a + b}).json()
+    # mastery correct → complete
+    step = client.post(f"/sessions/{sid}/answer", json={"text": str(a + b)}).json()
     assert step["phase"] == "complete"
     assert step["question"] is None
 
@@ -83,10 +88,10 @@ def test_direct_mastery_completes_session():
     sid = create["session_id"]
 
     # 1. diagnostic correct
-    step = client.post(f"/sessions/{sid}/answer", json={"value": 187}).json()
+    step = client.post(f"/sessions/{sid}/answer", json={"text": "187"}).json()
     assert step["phase"] == "mastery"
     a, b = step["question"]["a"], step["question"]["b"]
     # 2. mastery correct
-    step = client.post(f"/sessions/{sid}/answer", json={"value": a + b}).json()
+    step = client.post(f"/sessions/{sid}/answer", json={"text": str(a + b)}).json()
     assert step["phase"] == "complete"
     assert step["question"] is None
