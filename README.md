@@ -61,3 +61,5 @@ A `TutorStep` contains:
 - `evaluation` — whether the last answer was correct and any diagnosed misconceptions
 - `question` — the next problem (or `null` if complete)
 - `phase` — `diagnostic` → `targeted` → `mastery` → `complete`
+
+[![Playwright Tests](https://img.shields.io/badge/tests-playwright-brightgreen)](frontend/e2e/)
