@@ -2,14 +2,14 @@
   "name": "Perfect Student",
   "student_type": "always_correct",
   "max_turns": 8,
-  "transcript": "Tutor: What is 25 + 36?\nStudent: 61\nTutor: What is 5 + 6?\nStudent: 11\nTutor: What is 15 + 6?\nStudent: 21\nTutor: What is 1 + 1?\nStudent: 2\nTutor: What is 15 + 16?\nStudent: 31\nTutor: What is 15 + 6?\nStudent: 21\nTutor: What is 15 + 6?\nStudent: 21\nTutor: What is 5 + 6?\nStudent: 11\nTutor: What is 15 + 6?",
-  "final_phase": "targeted",
-  "turn_count": 8,
-  "socratic_quality": 4,
-  "scaffolding_adherence": true,
-  "never_reveals_answer": true,
+  "transcript": "  Tutor feedback: Let's start with a problem: What is 25 + 36?\n  Tutor asks: What is 25 + 36?\nStudent: 61\n  Tutor feedback: Great job! Let's try this one next: What is 19 + 13?\n    → Evaluation: CORRECT | misconception(s): none\n  Tutor asks: What is 19 + 13?\nStudent: 32\n  Tutor feedback: Great job! You've got it right!\n    → Evaluation: CORRECT | misconception(s): none",
+  "final_phase": "complete",
+  "turn_count": 2,
+  "socratic_quality": 1,
+  "scaffolding_adherence": false,
+  "never_reveals_answer": false,
   "diagnoses_specifically": false,
   "overall_pass": false,
-  "rationale": "The tutor uses Socratic questioning and scaffolds down from 25+36 to 5+6, then builds back up through 15+6 and 15+16, but never names the specific misconception (likely place value/omitted carry in tens column). The repetitive loop of 'What is 15 + 6?' three times without diagnosing why the student still struggles with 25+36 indicates the tutor fails to pinpoint that the student isn't carrying the 1 to the tens column.",
-  "failure_reason": "phase=targeted, want=complete; vague"
+  "rationale": "The tutor never asks guiding questions—only states problems and confirms answers verbatim ('Great job!'). When student answered '61' and '32' correctly, no Socratic probing occurred; tutor simply praised without deepening understanding. No scaffolding, no misconception diagnosis, and answers are effectively revealed through immediate confirmation.",
+  "failure_reason": "quality 1/3; reveals answer; vague"
 }

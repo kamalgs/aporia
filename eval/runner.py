@@ -54,14 +54,25 @@ def _choose_answer(step: TutorStep, student_type: str, turn: int) -> int:
 
 
 def _format_transcript(history: List[TurnData]) -> str:
+    """Human-readable transcript: feedback & eval follow each student answer,
+    then the next question is shown."""
     lines = []
     for turn in history:
-        if turn.role == "tutor" and turn.question:
-            lines.append(f"Tutor: What is {turn.question.a} + {turn.question.b}?")
-        elif turn.role == "student" and turn.answer:
+        if turn.role == "student" and turn.answer:
             lines.append(f"Student: {turn.answer.text}")
-        elif turn.role == "tutor" and turn.feedback:
-            lines.append(f"Tutor: {turn.feedback}")
+            continue
+        if turn.role != "tutor":
+            continue
+        # Feedback & evaluation respond to the previous student answer
+        if turn.feedback:
+            lines.append(f"  Tutor feedback: {turn.feedback}")
+        if turn.evaluation:
+            corr = "CORRECT" if turn.evaluation.is_correct else "WRONG"
+            miscs = ", ".join(turn.evaluation.misconceptions) or "none"
+            lines.append(f"    → Evaluation: {corr} | misconception(s): {miscs}")
+        # Next question comes after the feedback/eval
+        if turn.question:
+            lines.append(f"  Tutor asks: What is {turn.question.a} + {turn.question.b}?")
     return "\n".join(lines)
 
 
@@ -99,12 +110,12 @@ JUDGE_SYSTEM = """You are a senior mathematics education evaluator.
 Review tutoring session transcripts and score the tutor's Socratic quality.
 
 SCORING:
-- socratic_quality (1-5): Does the tutor guide via questions without giving answers?
+- socratic_quality (1-5): Does the tutor guide via questions without giving answers? Does feedback diagnose misconceptions specifically?
 - scaffolding_adherence (bool): After wrong answer on hard problem, does tutor drop to simpler prerequisite, then build monotonically back up?
 - never_reveals_answer (bool): Is correct numerical answer NEVER stated verbatim?
-- diagnoses_specifically (bool): Are misconceptions named specifically (omit_carry, place_value), or is feedback vague like "try again"?
+- diagnoses_specifically (bool): Are misconceptions named specifically in feedback lines (omit_carry, place_value), or is feedback vague?
 - overall_pass (bool): Would you recommend this tutor to a 3rd-grade teacher?
-- rationale (str): 1-2 sentences quoting specific transcript lines.
+- rationale (str): 1-2 sentences quoting specific transcript lines as evidence.
 
 OUTPUT — return ONLY JSON, no markdown or explanation outside the JSON."""
 
@@ -123,7 +134,10 @@ async def run_scenario(tutor: LlmAgent, scenario_path: Path, per_call_timeout: i
     max_turns = min(cfg["max_turns"], 8)  # hard cap to keep costs reasonable
 
     step = await asyncio.wait_for(tutor.start(), timeout=per_call_timeout)
-    history: List[TurnData] = [TurnData(role="tutor", question=step.question, feedback=step.feedback)]
+    # Evaluation on start() is meaningless — no student has answered yet.
+    history: List[TurnData] = [
+        TurnData(role="tutor", question=step.question, feedback=step.feedback)
+    ]
 
     for turn in range(max_turns):
         if step.question is None:
@@ -132,7 +146,9 @@ async def run_scenario(tutor: LlmAgent, scenario_path: Path, per_call_timeout: i
         history.append(TurnData(role="student", answer=StudentAnswerPayload(text=str(answer), value=answer)))
 
         step = await asyncio.wait_for(tutor.next(history), timeout=per_call_timeout)
-        history.append(TurnData(role="tutor", question=step.question, feedback=step.feedback))
+        history.append(
+            TurnData(role="tutor", question=step.question, feedback=step.feedback, evaluation=step.evaluation)
+        )
 
         if step.phase == "complete":
             break
@@ -179,7 +195,7 @@ async def _judge_transcript(transcript: str, timeout: int = 45) -> JudgeVerdict:
 
 def _apply_criteria(record: EvalRecord, criteria: dict) -> str | None:
     """Return failure reason string, or None if all criteria pass."""
-    reasons: List[str] = []
+    reasons: list[str] = []
     if criteria.get("min_socratic_quality") and (record.socratic_quality or 0) < criteria["min_socratic_quality"]:
         reasons.append(f"quality {record.socratic_quality}/{criteria['min_socratic_quality']}")
     if criteria.get("must_reach") and record.final_phase != criteria["must_reach"]:
