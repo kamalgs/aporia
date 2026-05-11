@@ -70,14 +70,15 @@ class TutorAgent(ABC):
 
 
 class LlmAgent(TutorAgent):
-    def __init__(self, model_name: str | None = None, api_key: str | None = None):
+    def __init__(self, model_name: str | None = None, api_key: str | None = None, base_url: str | None = None):
         model_name = model_name or os.environ.get("TUTOR_MODEL", "openai/gpt-4o-mini")
         api_key = api_key or os.environ.get("OPENROUTER_API_KEY")
+        base_url = base_url or "https://openrouter.ai/api/v1"
         if not api_key:
-            raise RuntimeError("OPENROUTER_API_KEY not set")
+            raise RuntimeError("LLM API key not set")
         model = OpenAIModel(
             model_name,
-            base_url="https://openrouter.ai/api/v1",
+            base_url=base_url,
             api_key=api_key,
         )
         self._agent = Agent(model, result_type=TutorStep, system_prompt=SYSTEM_PROMPT)
