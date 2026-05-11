@@ -2,7 +2,7 @@
 
 ## Workflow: Branch → PR → Merge
 
-We follow a minimal branch-based workflow. `master` is protected-ish by convention — nobody pushes directly.
+`master` is **protected** by GitHub branch protection rules. Direct pushes are blocked. Every change must go through a branch → PR → merge workflow. Even the repo owner must open a PR.
 
 ### 1. Create a feature branch
 
