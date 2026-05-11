@@ -151,7 +151,12 @@ class LlmAgent(TutorAgent):
             parts.append(f"Original target problem: {self._diag.a} + {self._diag.b}")
         return "## TUTORING ENGINE STATE\n" + "\n".join(parts)
 
-    async def start(self) -> TutorStep:
+    def _derive_state_from_history(self, history: List[TurnData]) -> None:
+        """Reconstruct all counters from the full transcript.
+
+        This makes LlmAgent stateless: every `next()` call begins with
+        fresh counters derived from the stored turns.
+        """
         self._diag = None
         self._phase_chain = []
         self._consecutive_correct = 0
@@ -160,21 +165,59 @@ class LlmAgent(TutorAgent):
         self._mastered_level = 0
         self._last_was_correct = None
 
-        result = await self._agent.run(
-            "Start a new tutoring session."
-            "\nAsk a 2-digit addition diagnostic problem that requires carrying in the ones place (e.g. 25 + 36)."
-            "\nphase must be 'diagnostic'."
-        )
-        step = result.output
+        # Walk chronologically so we can count consecutive streaks correctly
+        tutor_question: Problem | None = None
+        for turn in history:
+            if turn.role == "tutor" and turn.question:
+                tutor_question = turn.question
+                # Capture the first 2-digit question as the diagnostic
+                if self._diag is None and tutor_question.a >= 10 and tutor_question.b >= 10:
+                    self._diag = tutor_question
+                d = self._difficulty(tutor_question)
+                self._peak_difficulty = max(self._peak_difficulty, d)
+
+            if turn.role == "student" and turn.answer and tutor_question:
+                is_correct, _, _ = _detect_error(
+                    tutor_question,
+                    turn.answer.value if turn.answer else 0,
+                )
+                self._last_was_correct = is_correct
+                d = self._difficulty(tutor_question)
+                if is_correct:
+                    self._consecutive_correct += 1
+                    self._consecutive_wrong = 0
+                    if d > self._mastered_level:
+                        self._mastered_level = d
+                else:
+                    self._consecutive_wrong += 1
+                    self._consecutive_correct = 0
+
+    async def start(self) -> TutorStep:
+        # Reset transient counters (these will be rebuilt from history on next())
+        self._diag = None
+        self._phase_chain = ["diagnostic"]
+        self._consecutive_correct = 0
+        self._consecutive_wrong = 0
+        self._peak_difficulty = 0
+        self._mastered_level = 0
+        self._last_was_correct = None
+
         # Always use a code-generated diagnostic that guarantees ones-place carry.
         d = _generate_diagnostic(_SimpleRng(42))
         self._diag = d
-        # keep LLM feedback but ensure question/phase are rigorous
-        step = step.model_copy(update={"question": d, "phase": "diagnostic"})
-        self._phase_chain.append(step.phase)
-        return step
+        return TutorStep(
+            feedback=f"Let's solve a two-digit addition problem together! What is {d.a} + {d.b}?",
+            evaluation=Evaluation(is_correct=False, misconceptions=[], hint=""),
+            question=d,
+            phase="diagnostic",  # type: ignore[assignment]
+            needs_human=False,
+        )
 
     async def next(self, history: List[TurnData]) -> TutorStep:
+        # ---- rebuild all counters from scratch using the transcript history ----
+        # This makes the agent stateless: every request computes state deterministically.
+        self._derive_state_from_history(history)
+
         # ---- evaluate the latest student answer locally ----
         last_question = next(
             (t for t in reversed(history) if t.role == "tutor" and t.question), None
@@ -191,7 +234,7 @@ class LlmAgent(TutorAgent):
                 last_student.answer.value if last_student.answer else 0,
             )
 
-        self._update_state(last_problem, local_correct)
+        # State is fully derived from history above; local_correct/_update_state no longer needed.
 
         # ---- escape hatch: flag for human intervention after 3 consecutive wrong answers ----
         if self._consecutive_wrong >= 3:
