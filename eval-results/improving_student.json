@@ -2,14 +2,14 @@
   "name": "Improving Student",
   "student_type": "wrong_then_correct",
   "max_turns": 8,
-  "transcript": "  Tutor feedback: Let's try to solve this problem: What is 25 + 36?\n  Tutor asks: What is 88 + 99?\nStudent: 177\n  Tutor feedback: You added the ones correctly, but is there something extra left over when the ones go above 9? What do we do with that extra ten?\n    → Evaluation: WRONG | misconception(s): omit_carry\n  Tutor asks: What is 6 + 8?\nStudent: 14\n  Tutor feedback: Great job! How did you know?\n    → Evaluation: CORRECT | misconception(s): none\n  Tutor asks: What is 19 + 6?\nStudent: 25\n  Tutor feedback: Great job! How did you know?\n    → Evaluation: CORRECT | misconception(s): none\n  Tutor asks: What is 15 + 18?\nStudent: 33\n  Tutor feedback: Great job! How did you know?\n    → Evaluation: CORRECT | misconception(s): none\n  Tutor asks: What is 34 + 97?\nStudent: 131\n  Tutor feedback: Great job! How did you know?\n    → Evaluation: CORRECT | misconception(s): none",
+  "transcript": "  Tutor feedback: Let's start with a two-digit addition problem: What is 25 + 36?\n  Tutor asks: What is 88 + 99?\nStudent: 177\n  Tutor feedback: You added the ones correctly, but is there something extra left over when the ones go above 9? What do we do with that extra ten?\n    → Evaluation: WRONG | misconception(s): omit_carry\n  Tutor asks: What is 9 + 8?\nStudent: 17\n  Tutor feedback: Well done! You found the right answer! What strategy did you use? Now, let's try another one: What is 15 + 7?\n    → Evaluation: CORRECT | misconception(s): none\n  Tutor asks: What is 15 + 7?\nStudent: 22\n  Tutor feedback: Well done! You found the right answer! What strategy did you use? Now, let's try another one: What is 18 + 17?\n    → Evaluation: CORRECT | misconception(s): none\n  Tutor asks: What is 18 + 17?\nStudent: 35\n  Tutor feedback: Well done! You found the right answer! What strategy did you use? Now, let's try another one: What is 59 + 44?\n    → Evaluation: CORRECT | misconception(s): none\n  Tutor asks: What is 59 + 44?\nStudent: 103\n  Tutor feedback: Well done! You found the right answer! What strategy did you use? Now, let's try another one: What is 88 + 99?\n    → Evaluation: CORRECT | misconception(s): none",
   "final_phase": "complete",
   "turn_count": 5,
-  "socratic_quality": 3,
+  "socratic_quality": 2,
   "scaffolding_adherence": false,
   "never_reveals_answer": true,
   "diagnoses_specifically": true,
   "overall_pass": false,
-  "rationale": "The tutor correctly diagnoses 'omit_carry' specifically and never reveals answers verbatim, but fails at scaffolding: after the student misses 25+36, the tutor jumps to 88+99 (harder, not simpler), then to 6+8 (too simple), then immediately back to 19+6 and 15+18 without monotonic progression toward the original difficulty. The tutor also never returns to a 2-digit + 2-digit with carry problem to verify mastery, and 'How did you know?' is used repetitively without probing for strategy.",
+  "rationale": "The tutor names the specific misconception 'omit_carry' when the student answers 177 for 88+99, but then abandons Socratic method entirely—after the student correctly answers 9+8, the tutor simply praises and jumps to 15+7 without building back up to the original two-digit carrying problem. The tutor never returns to 88+99 to verify the carry was learned, and uses 'Well done! You found the right answer!' repeatedly without probing thinking, making this largely directive praise rather than Socratic guidance.",
   "failure_reason": null
 }

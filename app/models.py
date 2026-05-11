@@ -21,6 +21,7 @@ class TutorStep(BaseModel):
     evaluation: Evaluation
     question: Problem | None = None
     phase: Literal["diagnostic", "targeted", "mastery", "complete"]
+    needs_human: bool = False  # true when student is stuck after repeated wrong answers
 
 
 class StudentAnswerPayload(BaseModel):
