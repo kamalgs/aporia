@@ -3,16 +3,15 @@ import { test, expect } from '@playwright/test';
 test.describe('Deployed site smoke tests', () => {
   test('front page loads and API starts a session', async ({ page, request }) => {
     await page.goto('/');
-    await expect(page.locator('h1')).toHaveText('Socratic Arithmetic Tutor');
+    await expect(page.locator('h1')).toHaveText('Socratic Tutor');
 
     // The start button exists and is clickable
     await page.click('button:has-text("Start Session")');
 
     // After clicking, the tutor asks a question
-    const convo = page.locator('section[aria-label="conversation"]');
-    await expect(convo).toContainText('Tutor:', { timeout: 15000 });
+    const convo = page.locator('[aria-label="conversation"]');
     await expect(convo).toContainText('What is', { timeout: 15000 });
-    await expect(page.locator('input[type="number"]')).toBeVisible();
+    await expect(page.locator('.chat-textarea')).toBeVisible();
   });
 
   test('API returns a valid structured TutorStep', async ({ request }) => {
@@ -32,20 +31,22 @@ test.describe('Deployed site smoke tests', () => {
     expect(typeof body.step.question.b).toBe('number');
   });
 
-  test('submitting a number advances the conversation', async ({ page }) => {
+  test('submitting free text advances the conversation', async ({ page }) => {
     await page.goto('/');
     await page.click('button:has-text("Start Session")');
 
-    await expect(page.locator('section[aria-label="conversation"]')).toContainText('What is', { timeout: 15000 });
+    await expect(page.locator('[aria-label="conversation"]')).toContainText('What is', { timeout: 15000 });
 
-    // Submit any number — the tutor must respond
-    const before = await page.locator('section[aria-label="conversation"] p').count();
-    await page.fill('input[type="number"]', '99');
-    await page.click('button:has-text("Submit")');
+    // Count messages before
+    const before = await page.locator('article.message').count();
+
+    // Type a free-form answer and hit the send button
+    await page.fill('.chat-textarea', 'I think it is 99');
+    await page.click('.send-button');
 
     // Wait for the tutor's feedback + next question to appear
     await expect(async () => {
-      const after = await page.locator('section[aria-label="conversation"] p').count();
+      const after = await page.locator('article.message').count();
       expect(after).toBeGreaterThan(before);
     }).toPass({ timeout: 20000 });
   });
