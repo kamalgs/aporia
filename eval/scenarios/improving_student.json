@@ -1,0 +1,13 @@
+{
+  "name": "Improving Student",
+  "description": "Student gets first answer wrong (omit carry), then correct on every subsequent turn. Tests that the tutor scaffolds down then up, eventually reaching complete.",
+  "student_type": "wrong_then_correct",
+  "max_turns": 15,
+  "criteria": {
+    "min_socratic_quality": 3,
+    "must_reach": "complete",
+    "must_scaffold": true,
+    "never_reveals_answer": true,
+    "monotonic_progression": true
+  }
+}

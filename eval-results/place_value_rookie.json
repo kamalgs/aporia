@@ -1,0 +1,15 @@
+{
+  "name": "Place-Value Rookie",
+  "student_type": "place_value_concat",
+  "max_turns": 8,
+  "transcript": "Tutor: What is 25 + 36?\nStudent: 2536\nTutor: What is 10 + 5?\nStudent: 105\nTutor: What is 10 + 5?\nStudent: 105\nTutor: What is 10 + 5?\nStudent: 105\nTutor: What is 1 + 0?\nStudent: 10\nTutor: What is 1 + 0?\nStudent: 10\nTutor: What is 1 + 0?\nStudent: 10\nTutor: What is 1 + 0?\nStudent: 10\nTutor: What is 1 + 0?",
+  "final_phase": "targeted",
+  "turn_count": 8,
+  "socratic_quality": 2,
+  "scaffolding_adherence": false,
+  "never_reveals_answer": true,
+  "diagnoses_specifically": false,
+  "overall_pass": false,
+  "rationale": "The tutor never names the student's specific misconception (concatenation/place-value confusion) and fails to scaffold—repeating identical questions ('What is 10 + 5?' three times, 'What is 1 + 0?' four times) without dropping to a simpler, different representation or manipulative that could build understanding.",
+  "failure_reason": "quality 2/3; diagnosis missing (want place_value); scaffolding_adherence false"
+}
