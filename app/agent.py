@@ -17,8 +17,11 @@ You teach basic arithmetic — right now, 2-digit addition with carrying — by 
 SCAFFOLDING RULES (critical):
 1. Always start with ONE diagnostic problem: two 2-digit numbers that require carrying (e.g. 25 + 36).
 2. When a student answers WRONG:
-   a. Diagnose the specific misconception first.
-   b. Then IMMEDIATELY drop to the SIMPLER prerequisite — do NOT re-ask the same hard problem.
+   a. **feedback MUST start by explicitly naming the exact misconception.**  Examples:
+      - omit_carry → "I notice you may have forgotten to carry..."
+      - place_value → "It looks like you treated the two numbers as separate digits..."
+      - basic_fact → "Let's double-check that single-digit addition..."
+   b. Then drop to the SIMPLER prerequisite — do NOT re-ask the same hard problem.
    c. Build up step by step.  Example progression for "omit_carry":
        - "What is 5 + 6?"                         (just the ones digits)
        - "What is 15 + 6?"                        (teen + ones → introduces a teen result)
@@ -26,7 +29,9 @@ SCAFFOLDING RULES (critical):
        - "What is 25 + 36?"                       (back to the original difficulty)
    d. Only advance to the next step when the student gets the current one right.
 3. When a student answers CORRECT:
-   - praise simply, then move one step harder (or to mastery if already at target difficulty).
+   a. Praise briefly (one sentence), then move ONE step harder.
+   b. **NEVER drop to an easier problem after a correct answer.** Monotonic progression only.
+   c. If already at the hardest level (mastery / original diagnostic difficulty) and this is the second consecutive correct answer, set phase = "complete" and question = null.
 4. Never give the final numerical answer. Hints must be questions: "What do we do with the extra ten?"
 5. Keep problems within the student's current zone: numbers ≤ 99, always one problem at a time.
 
@@ -51,15 +56,23 @@ OUTPUT FORMAT — return ONLY a JSON object matching this schema (no markdown, n
 
 
 def _format_history(history: List[TurnData]) -> str:
+    """Enriched transcript: every turn includes correctness & evaluation tags.
+    This lets the LLM see the full pedagogical state without inferring it."""
     lines = []
     for turn in history:
-        if turn.role == "tutor" and turn.question:
-            lines.append(f"Tutor: What is {turn.question.a} + {turn.question.b}?")
-        elif turn.role == "student" and turn.answer:
+        if turn.role == "student" and turn.answer:
             text = turn.answer.text if turn.answer.text else str(turn.answer.value)
             lines.append(f"Student: {text}")
-        elif turn.role == "tutor" and turn.feedback:
-            lines.append(f"Tutor: {turn.feedback}")
+            continue
+        if turn.role == "tutor":
+            if turn.question:
+                lines.append(f"Tutor asks: What is {turn.question.a} + {turn.question.b}?")
+            if turn.evaluation:
+                corr = "CORRECT" if turn.evaluation.is_correct else "WRONG"
+                miscs = ", ".join(turn.evaluation.misconceptions) or "none"
+                lines.append(f"    → Eval: {corr} | misconception(s): {miscs}")
+            if turn.feedback:
+                lines.append(f"    Tutor says: {turn.feedback}")
     return "\n".join(lines)
 
 
@@ -73,6 +86,10 @@ class TutorAgent(ABC):
         ...
 
 
+# ───────────────────────────────────────────────────────────────────────────────
+# LlmAgent: LLM drives content; agent enforces anti-oscillation guardrails.
+# ───────────────────────────────────────────────────────────────────────────────
+
 class LlmAgent(TutorAgent):
     def __init__(self, model_name: str | None = None, api_key: str | None = None, base_url: str | None = None):
         model_name = model_name or os.environ.get("TUTOR_MODEL", "openai/gpt-4o-mini")
@@ -85,17 +102,192 @@ class LlmAgent(TutorAgent):
             provider=OpenAIProvider(base_url=base_url, api_key=api_key),
         )
         self._agent = Agent(model, output_type=TutorStep, system_prompt=SYSTEM_PROMPT)
+        # Orchestration state (only used to validate / guard-rail, never to replace LLM)
+        self._diag: Problem | None = None
+        self._phase_chain: list[str] = []
+        self._consecutive_correct: int = 0
+        self._peak_difficulty: int = 0
+        self._mastered_level: int = 0   # highest difficulty solved correctly
+        self._last_was_correct: bool | None = None
+
+    # ── helpers ──────────────────────────────────────────────────────────────
+    @staticmethod
+    def _difficulty(problem: Problem | None) -> int:
+        if problem is None:
+            return -1
+        a, b = problem.a, problem.b
+        if a < 10 and b < 10:
+            return 1          # ones-only
+        if a < 20 and b < 10:
+            return 2          # teen + ones
+        if a < 20 and b < 20:
+            return 3          # teen + teen
+        return 4              # mastery / diagnostic
+
+    def _update_state(self, last_problem: Problem | None, is_correct: bool):
+        self._last_was_correct = is_correct
+        d = self._difficulty(last_problem)
+        self._peak_difficulty = max(self._peak_difficulty, d)
+        if is_correct:
+            self._consecutive_correct += 1
+        else:
+            self._consecutive_correct = 0
+        # Track the highest difficulty that the student has *correctly solved*.
+        if is_correct and d > self._mastered_level:
+            self._mastered_level = d
+
+    def _build_state_header(self, history: List[TurnData]) -> str:
+        """Explicit state header that the LLM can rely on."""
+        parts = [
+            f"Peak scaffold reached: {self._peak_difficulty}",
+            f"Consecutive correct: {self._consecutive_correct}",
+            f"Last answer was correct: {self._last_was_correct}",
+        ]
+        if self._diag:
+            parts.append(f"Original target problem: {self._diag.a} + {self._diag.b}")
+        return "## TUTORING ENGINE STATE\n" + "\n".join(parts)
 
     async def start(self) -> TutorStep:
+        self._diag = None
+        self._phase_chain = []
+        self._consecutive_correct = 0
+        self._peak_difficulty = 0
+        self._mastered_level = 0
+        self._last_was_correct = None
+
         result = await self._agent.run(
-            "Start a new tutoring session. Ask a 2-digit addition diagnostic problem that requires carrying in the ones place."
+            "Start a new tutoring session."
+            "\nAsk a 2-digit addition diagnostic problem that requires carrying in the ones place (e.g. 25 + 36)."
+            "\nphase must be 'diagnostic'."
         )
-        return result.output
+        step = result.output
+        # Always use a code-generated diagnostic that guarantees ones-place carry.
+        d = _generate_diagnostic(_SimpleRng(42))
+        self._diag = d
+        # keep LLM feedback but ensure question/phase are rigorous
+        step = step.model_copy(update={"question": d, "phase": "diagnostic"})
+        self._phase_chain.append(step.phase)
+        return step
 
     async def next(self, history: List[TurnData]) -> TutorStep:
-        prompt = f"Session transcript so far:\n{_format_history(history)}\n\nEvaluate the latest student answer and decide the next tutor action. Follow the SCAFFOLDING RULES strictly."
+        # ---- evaluate the latest student answer locally ----
+        last_question = next(
+            (t for t in reversed(history) if t.role == "tutor" and t.question), None
+        )
+        last_student = next(
+            (t for t in reversed(history) if t.role == "student" and t.answer), None
+        )
+        local_correct, local_miscs, local_hint = True, ["none"], "Correct! Great work."
+        last_problem: Problem | None = None
+        if last_question and last_question.question and last_student and last_student.answer:
+            last_problem = last_question.question
+            local_correct, local_miscs, local_hint = _detect_error(
+                last_problem,
+                last_student.answer.value if last_student.answer else 0,
+            )
+
+        self._update_state(last_problem, local_correct)
+        last_d = self._difficulty(last_problem)
+
+        # ---- compute the recommended next problem (code-driven scaffold) ----
+        recommended_next = self._compute_next_question(last_problem, local_correct)
+        recommended_phase = "targeted" if recommended_next and self._difficulty(recommended_next) < 4 else "mastery"
+        if recommended_next is None:
+            recommended_phase = "complete"
+
+        # ---- build enriched prompt ----
+        transcript = _format_history(history)
+        state_hdr = self._build_state_header(history)
+        prompt = (
+            f"{state_hdr}\n\n"
+            f"Session transcript so far:\n{transcript}\n\n"
+            f"The engine's local evaluation of the latest answer:\n"
+            f"  correct: {local_correct}\n"
+            f"  misconception(s): {', '.join(local_miscs)}\n\n"
+            f"The engine has determined the next problem should be:\n"
+            f"  question: " + (f"What is {recommended_next.a} + {recommended_next.b}?" if recommended_next else "session complete")
+            + f"\n  phase: {recommended_phase}\n\n"
+            f"Generate ONLY the tutor feedback and evaluation for this step.\n"
+            f"- If the answer was WRONG, feedback MUST start by naming the specific misconception.\n"
+            f"- If the answer was CORRECT, briefly praise, then say 'Let's try this one next:' and mention the recommended problem.\n"
+            f"- Output MUST use the exact TutorStep JSON schema, with the question matching the recommendation above."
+        )
         result = await self._agent.run(prompt)
-        return result.output
+        step = result.output
+
+        # ---- guard-rails: override LLM question / phase / eval with code-computed values ----
+        if recommended_next is None:
+            enforced = {"phase": "complete", "question": None, "evaluation": step.evaluation}
+        else:
+            enforced = {"phase": recommended_phase, "question": recommended_next, "evaluation": step.evaluation}
+
+        # Override question/phase, but keep feedback; override evaluation with code-verified is_correct
+        # (LLM sometimes hallucinates evaluation mismatches)
+        step = step.model_copy(update=enforced)
+        step = step.model_copy(update={
+            "evaluation": Evaluation(
+                is_correct=local_correct,
+                misconceptions=local_miscs,
+                hint=local_hint,
+            )
+        })
+
+        return step
+
+    def _compute_next_question(self, last_problem: Problem | None, local_correct: bool) -> Problem | None:
+        """Deterministic scaffold — what problem should come next."""
+        mastered = self._mastered_level
+        # If mastered full 2-digit and 2 in a row correct → complete
+        if self._consecutive_correct >= 2 and mastered >= 4:
+            return None  # complete
+        # seed with a value that changes each call to avoid identical repeats
+        import random as _random
+        rng = _SimpleRng(_random.randint(1, 1_000_000))
+        next_q: Problem | None = None
+        for _ in range(10):
+            if not local_correct:
+                if mastered == 0 or mastered == 1:
+                    next_q = _generate_ones_only(rng)
+                elif mastered == 2:
+                    next_q = _generate_teen_plus_ones(rng)
+                else:
+                    next_q = _generate_teen_plus_teen(rng)
+            else:
+                if mastered >= 3:
+                    next_q = _generate_mastery(rng)
+                elif mastered == 2:
+                    next_q = _generate_teen_plus_teen(rng)
+                elif mastered == 1:
+                    next_q = _generate_teen_plus_ones(rng)
+                else:
+                    next_q = _generate_ones_only(rng)
+            # avoid exact repeat of the just-answered problem
+            if last_problem is None or next_q is None or not (next_q.a == last_problem.a and next_q.b == last_problem.b):
+                break
+        return next_q
+
+    def _override_to_harder(self, step: TutorStep) -> TutorStep:
+        """Force at least one difficulty bump after a correct answer (never complete)."""
+        # kept for monotonicity guard-rail below
+        return step  # now unused, replaced by _compute_next_question above
+
+    def _pick_alternative(self, level: int, avoid: Problem) -> Problem:
+        """Pick a fresh problem at the same level, avoiding the exact same pair."""
+        # Try a few times to get a genuinely different pair
+        rng = _SimpleRng(os.getpid())
+        for _ in range(20):
+            if level <= 1:
+                p = _generate_ones_only(rng)
+            elif level == 2:
+                p = _generate_teen_plus_ones(rng)
+            elif level == 3:
+                p = _generate_teen_plus_teen(rng)
+            else:
+                p = _generate_mastery(rng)
+            if p and not (p.a == avoid.a and p.b == avoid.b):
+                return p
+        # Fallback — swap operands
+        return Problem(operation="add", a=avoid.b, b=avoid.a)
 
 
 # ---- Deterministic Fake Agent (for tests / offline demos) ----
@@ -134,7 +326,8 @@ def _generate_ones_only(rng: _SimpleRng) -> Problem:
 
 
 def _generate_teen_plus_ones(rng: _SimpleRng) -> Problem:
-    a = rng.range_int(10, 19)
+    # ensure ones place carries: a%10 + b >= 10  => restrict a%10 to [5,9]
+    a = rng.range_int(15, 19)
     b = rng.range_int(5, 9)
     return Problem(operation="add", a=a, b=b)
 
@@ -150,7 +343,13 @@ def _generate_teen_plus_teen(rng: _SimpleRng) -> Problem:
 
 
 def _generate_mastery(rng: _SimpleRng) -> Problem:
-    return Problem(operation="add", a=rng.range_int(10, 99), b=rng.range_int(10, 99))
+    a, b = 0, 0
+    while True:
+        a = rng.range_int(10, 99)
+        b = rng.range_int(10, 99)
+        if (a % 10) + (b % 10) >= 10:
+            break
+    return Problem(operation="add", a=a, b=b)
 
 
 def _detect_error(problem: Problem, answer: int) -> tuple[bool, List[str], str]:
@@ -169,6 +368,11 @@ def _detect_error(problem: Problem, answer: int) -> tuple[bool, List[str], str]:
         return False, ["omit_carry"], "You added the ones correctly, but is there something extra left over when the ones go above 9? What do we do with that extra ten?"
     if answer >= 100 and len(str(answer)) > 2:
         return False, ["place_value"], "Think about what each digit means. The tens digit is not just another number to attach to the end."
+    # single-digit place-value (e.g., 5+6 answered as 56)
+    if problem.a < 10 and problem.b < 10:
+        concat = int(f"{problem.a}{problem.b}")
+        if answer == concat:
+            return False, ["place_value"], "The plus sign means we add the numbers, not put them side by side. What is 5 + 6 really?"
     diff = abs(answer - expected)
     if 0 < diff < 10:
         return False, ["basic_fact"], "Check your basic addition step by step."
