@@ -2,14 +2,14 @@
   "name": "Perfect Student",
   "student_type": "always_correct",
   "max_turns": 8,
-  "transcript": "  Tutor feedback: Let's start with a problem: What is 25 + 36?\n  Tutor asks: What is 25 + 36?\nStudent: 61\n  Tutor feedback: Great job! Let's try this one next: What is 19 + 13?\n    → Evaluation: CORRECT | misconception(s): none\n  Tutor asks: What is 19 + 13?\nStudent: 32\n  Tutor feedback: Great job! You've got it right!\n    → Evaluation: CORRECT | misconception(s): none",
+  "transcript": "  Tutor feedback: Let's start with a problem! What is 25 + 36?\n  Tutor asks: What is 88 + 99?\nStudent: 187\n  Tutor feedback: Well done on that addition! What strategy did you use?\n    → Evaluation: CORRECT | misconception(s): none\n  Tutor asks: What is 48 + 15?\nStudent: 63\n  Tutor feedback: Well done on that addition! What strategy did you use?\n    → Evaluation: CORRECT | misconception(s): none",
   "final_phase": "complete",
   "turn_count": 2,
-  "socratic_quality": 1,
+  "socratic_quality": 2,
   "scaffolding_adherence": false,
-  "never_reveals_answer": false,
+  "never_reveals_answer": true,
   "diagnoses_specifically": false,
   "overall_pass": false,
-  "rationale": "The tutor never asks guiding questions—only states problems and confirms answers verbatim ('Great job!'). When student answered '61' and '32' correctly, no Socratic probing occurred; tutor simply praised without deepening understanding. No scaffolding, no misconception diagnosis, and answers are effectively revealed through immediate confirmation.",
-  "failure_reason": "quality 1/3; reveals answer; vague"
+  "rationale": "The tutor fails Socratically: after the student correctly answers 88+99 (a hard problem with carrying), the tutor jumps to 48+15 without probing understanding or building from prerequisites, and never asks diagnostic questions when answers are correct—merely praising with 'Well done!' and generic 'What strategy did you use?' The tutor also skips entirely past the first problem (25+36) without student response, showing no actual scaffolding or misconception diagnosis.",
+  "failure_reason": null
 }

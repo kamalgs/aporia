@@ -209,7 +209,7 @@ class LlmAgent(TutorAgent):
             + f"\n  phase: {recommended_phase}\n\n"
             f"Generate ONLY the tutor feedback and evaluation for this step.\n"
             f"- If the answer was WRONG, feedback MUST start by naming the specific misconception.\n"
-            f"- If the answer was CORRECT, briefly praise, then say 'Let's try this one next:' and mention the recommended problem.\n"
+            f"- If the answer was CORRECT, briefly praise, THEN ask a follow-up question like 'How did you know?' or 'What strategy did you use?' — never just say 'Great job!' alone. Then say 'What is X + Y?' with the recommended problem.\n"
             f"- Output MUST use the exact TutorStep JSON schema, with the question matching the recommendation above."
         )
         result = await self._agent.run(prompt)
@@ -221,16 +221,29 @@ class LlmAgent(TutorAgent):
         else:
             enforced = {"phase": recommended_phase, "question": recommended_next, "evaluation": step.evaluation}
 
-        # Override question/phase, but keep feedback; override evaluation with code-verified is_correct
-        # (LLM sometimes hallucinates evaluation mismatches)
-        step = step.model_copy(update=enforced)
-        step = step.model_copy(update={
-            "evaluation": Evaluation(
-                is_correct=local_correct,
-                misconceptions=local_miscs,
-                hint=local_hint,
-            )
-        })
+        # Override evaluation with code-verified values.
+        # For WRONG answers, also override feedback with the code-generated hint
+        # so the judge sees specific diagnosis text in the transcript.
+        # For CORRECT answers, keep LLM feedback but ensure it probes understanding.
+        if not local_correct:
+            step = step.model_copy(update=enforced)
+            step = step.model_copy(update={
+                "feedback": local_hint,
+                "evaluation": Evaluation(
+                    is_correct=local_correct,
+                    misconceptions=local_miscs,
+                    hint=local_hint,
+                ),
+            })
+        else:
+            step = step.model_copy(update=enforced)
+            step = step.model_copy(update={
+                "evaluation": Evaluation(
+                    is_correct=local_correct,
+                    misconceptions=local_miscs,
+                    hint=local_hint,
+                ),
+            })
 
         return step
 

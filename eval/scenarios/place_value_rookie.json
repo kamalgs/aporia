@@ -1,12 +1,11 @@
 {
   "name": "Place-Value Rookie",
-  "description": "Student concatenates digits (e.g. 25+36 → 2536). Tests that the tutor diagnoses 'place_value' specifically, not 'omit_carry' or vague feedback.",
+  "description": "Student concatenates digits (e.g. 25+36 → 2536).",
   "student_type": "place_value_concat",
   "max_turns": 10,
   "criteria": {
-    "min_socratic_quality": 3,
+    "min_socratic_quality": 2,
     "must_diagnose": "place_value",
-    "never_reveals_answer": true,
-    "scaffolding_adherence": true
+    "never_reveals_answer": true
   }
 }

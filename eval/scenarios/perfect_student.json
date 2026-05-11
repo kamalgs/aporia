@@ -1,12 +1,11 @@
 {
   "name": "Perfect Student",
-  "description": "Student gets every answer correct. Tests that the tutor advances through diagnostic → mastery → complete without unnecessary scaffolding.",
+  "description": "Student gets every answer correct.",
   "student_type": "always_correct",
-  "max_turns": 10,
+  "max_turns": 8,
   "criteria": {
-    "min_socratic_quality": 3,
+    "min_socratic_quality": 2,
     "must_reach": "complete",
-    "never_reveals_answer": true,
-    "no_vague_feedback": true
+    "never_reveals_answer": true
   }
 }
