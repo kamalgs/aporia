@@ -3,7 +3,7 @@ import './App.css';
 
 type Problem = { operation: 'add'; a: number; b: number };
 type Evaluation = { is_correct: boolean; misconceptions: string[]; hint: string };
-type TutorStep = { feedback: string; evaluation: Evaluation; question: Problem | null; phase: string };
+type TutorStep = { feedback: string; evaluation: Evaluation; question: Problem | null; phase: string; needs_human?: boolean };
 type SessionCreated = { session_id: string; step: TutorStep };
 type Message = {
   id: string;
@@ -26,13 +26,23 @@ function questionText(q: Problem): string {
 export default function App() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [currentQuestion, setCurrentQuestion] = useState<Problem | null>(null);
+  const [isHumanHandoff, setIsHumanHandoff] = useState(false);
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  useEffect(() => {
+    // Focus input when a question appears (so keyboard opens on mobile)
+    if (currentQuestion && inputRef.current) {
+      inputRef.current.focus();
+    }
+  }, [currentQuestion]);
 
   const addMessage = (role: 'tutor' | 'student', text: string) => {
     setMessages((m) => [...m, { id: crypto.randomUUID(), role, text, time: formatTime() }]);
@@ -46,8 +56,10 @@ export default function App() {
     }
     const data: SessionCreated = await res.json();
     setSessionId(data.session_id);
-    const text = `${data.step.feedback}\n\n${data.step.question ? questionText(data.step.question) : ''}`.trim();
-    addMessage('tutor', text);
+    // Feedback only — question rendered separately via currentQuestion
+    addMessage('tutor', data.step.feedback || 'Let us start!');
+    setCurrentQuestion(data.step.question);
+    setIsHumanHandoff(!!data.step.needs_human);
   };
 
   const sendMessage = async () => {
@@ -68,8 +80,10 @@ export default function App() {
       return;
     }
     const step: TutorStep = await res.json();
-    const feedback = `${step.feedback}${step.question ? `\n\n${questionText(step.question)}` : ''}`.trim();
-    addMessage('tutor', feedback);
+    // Feedback only — never append the question text
+    addMessage('tutor', step.feedback);
+    setCurrentQuestion(step.question);
+    setIsHumanHandoff(!!step.needs_human);
     setIsSending(false);
   };
 
@@ -127,14 +141,26 @@ export default function App() {
         <div ref={endRef} />
       </main>
 
+      {/* Question card — always visible above the input bar */}
+      {currentQuestion && !isHumanHandoff && (
+        <section className="question-card" aria-label="current question">
+          <p className="question-text">{questionText(currentQuestion)}</p>
+        </section>
+      )}
+      {isHumanHandoff && (
+        <section className="question-card handoff" aria-label="handoff notice">
+          <p className="handoff-text">👋 Connecting you with a human tutor…</p>
+        </section>
+      )}
+
       <footer className="chat-input-bar">
-        {messages[messages.length - 1]?.role === 'tutor' &&
-         messages[messages.length - 1]?.text.includes('What is') ? (
+        {!isHumanHandoff ? (
           <div className="input-wrapper">
             <textarea
+              ref={inputRef}
               className="chat-textarea"
               rows={1}
-              placeholder="Type your answer or reasoning…"
+              placeholder={currentQuestion ? 'Type your answer…' : 'Type your answer or reasoning…'}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
@@ -149,9 +175,9 @@ export default function App() {
               ➤
             </button>
           </div>
-        ) : messages[messages.length - 1]?.text.includes('complete') ? (
+        ) : (
           <p className="session-done">Session complete. Great work!</p>
-        ) : null}
+        )}
       </footer>
     </div>
   );
