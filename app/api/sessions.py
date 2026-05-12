@@ -4,12 +4,14 @@ from pydantic import BaseModel
 from app.content_registry.registry import registry
 from app.domain.events import CoachIntentEvent, LearnerTextEvent, TranscriptEvent
 from app.domain.session import Session, SessionCreate
+from app.roles.session_role import get_session_llm_client, run_session
+from app.roles.state_updater import apply_turn_signal
+from app.roles.trigger_policy import should_run_session_role
 from app.roles.turn_role import get_llm_client, run_turn
+from app.store import learners as learners_store
 from app.store import sessions as sessions_store
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
-
-_DEFAULT_GOAL = "warm_up"
 
 
 class AppendEventRequest(BaseModel):
@@ -27,20 +29,6 @@ class TurnRequest(BaseModel):
 class TurnResponse(BaseModel):
     utterance: str
     turn_signal: dict
-
-
-def _derive_intent(session: Session) -> CoachIntentEvent:
-    for event in reversed(session.transcript):
-        if isinstance(event, CoachIntentEvent):
-            return event
-    reg = registry()
-    program = reg.program(session.program_id)
-    skill_id = None
-    if program and program.mandatory_skill_ids:
-        skill_id = program.mandatory_skill_ids[0]
-    elif program and program.skill_ids:
-        skill_id = program.skill_ids[0]
-    return CoachIntentEvent(goal=_DEFAULT_GOAL, skill_id=skill_id)
 
 
 @router.post("", response_model=Session, status_code=201)
@@ -76,40 +64,75 @@ async def end_session(session_id: str, body: EndSessionRequest) -> Session:
 async def session_turn(
     session_id: str,
     body: TurnRequest,
-    llm_client=Depends(get_llm_client),
+    turn_llm=Depends(get_llm_client),
+    session_llm=Depends(get_session_llm_client),
 ) -> TurnResponse:
     session = await sessions_store.get(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    intent = _derive_intent(session)
-    if intent.skill_id is None:
+    learner = await learners_store.get(session.learner_id)
+    if learner is None:
+        raise HTTPException(status_code=404, detail="Learner not found")
+
+    program_state = learner.program_states.get(session.program_id, {})
+
+    # Run session role if trigger policy fires (session start, mastery, or struggle)
+    if should_run_session_role(session.transcript, program_state):
+        reg = registry()
+        program = reg.program(session.program_id)
+        if program is None:
+            raise HTTPException(status_code=422, detail=f"Program '{session.program_id}' not found")
+        coach_profile = reg.coach_profile(program.coach_profile_id) if program.coach_profile_id else None
+        intent = await run_session(
+            program=program,
+            coach_profile=coach_profile,
+            learner_portrait=learner.portrait_md,
+            program_state=program_state,
+            transcript_window=session.transcript,
+            llm_client=session_llm,
+        )
+        await sessions_store.append_event(session_id, intent)
+        session = await sessions_store.get(session_id)
+
+    # Derive current intent from most recent CoachIntentEvent
+    current_intent: CoachIntentEvent | None = None
+    for event in reversed(session.transcript):
+        if isinstance(event, CoachIntentEvent):
+            current_intent = event
+            break
+
+    if current_intent is None or current_intent.skill_id is None:
         raise HTTPException(status_code=422, detail="No skill available for this session")
 
-    skill = registry().skill(intent.skill_id)
+    skill = registry().skill(current_intent.skill_id)
     if skill is None:
-        raise HTTPException(status_code=422, detail=f"Skill '{intent.skill_id}' not found in registry")
+        raise HTTPException(status_code=422, detail=f"Skill '{current_intent.skill_id}' not found in registry")
 
-    await sessions_store.append_event(session_id, CoachIntentEvent(
-        goal=intent.goal,
-        skill_id=intent.skill_id,
-        difficulty_hint=intent.difficulty_hint,
-        tone_note=intent.tone_note,
-        rationale=intent.rationale,
-    ))
+    # Record learner input and reload
     await sessions_store.append_event(session_id, LearnerTextEvent(text=body.text))
-
     session = await sessions_store.get(session_id)
+
+    # Run turn role
     utterance_event, signal_event = await run_turn(
-        intent=intent,
+        intent=current_intent,
         skill=skill,
         transcript_window=session.transcript,
         learner_text=body.text,
-        llm_client=llm_client,
+        llm_client=turn_llm,
     )
 
     await sessions_store.append_event(session_id, utterance_event)
     await sessions_store.append_event(session_id, signal_event)
+
+    # Deterministic state update — fold signal into learner's program state
+    updated_state = apply_turn_signal(program_state, current_intent.skill_id, signal_event)
+    await learners_store.update_program_state(
+        learner_id=session.learner_id,
+        program_id=session.program_id,
+        skill_id=current_intent.skill_id,
+        skill_state=updated_state[current_intent.skill_id],
+    )
 
     return TurnResponse(
         utterance=utterance_event.text,

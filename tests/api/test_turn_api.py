@@ -3,10 +3,11 @@ from types import SimpleNamespace
 import pytest
 from httpx import AsyncClient
 
+from app.roles.session_role import get_session_llm_client
 from app.roles.turn_role import get_llm_client
 
 
-def _make_fake_llm(utterance: str = "What is 47 + 36?", on_target: bool = True):
+def _make_fake_turn_llm(utterance: str = "What is 47 + 36?", on_target: bool = True):
     class _FakeMessages:
         def create(self, **kwargs):
             return SimpleNamespace(
@@ -30,15 +31,39 @@ def _make_fake_llm(utterance: str = "What is 47 + 36?", on_target: bool = True):
     return _FakeLLM()
 
 
+def _make_fake_session_llm(goal: str = "warm_up", skill_id: str = "add-1digit"):
+    class _FakeMessages:
+        def create(self, **kwargs):
+            return SimpleNamespace(
+                content=[
+                    SimpleNamespace(
+                        type="tool_use",
+                        input={
+                            "goal": goal,
+                            "skill_id": skill_id,
+                            "difficulty_hint": "same",
+                            "rationale": "Starting warm up.",
+                        },
+                    )
+                ]
+            )
+
+    class _FakeLLM:
+        messages = _FakeMessages()
+
+    return _FakeLLM()
+
+
 @pytest.fixture
 def fake_llm():
-    return _make_fake_llm()
+    return _make_fake_turn_llm()
 
 
 @pytest.fixture
 def client_with_fake_llm(client: AsyncClient, fake_llm):
     from app.main import app
     app.dependency_overrides[get_llm_client] = lambda: fake_llm
+    app.dependency_overrides[get_session_llm_client] = lambda: _make_fake_session_llm()
     yield client
     app.dependency_overrides.clear()
 
@@ -84,6 +109,7 @@ async def test_turn_missing_session_returns_404(client_with_fake_llm: AsyncClien
 
 @pytest.mark.asyncio
 async def test_turn_uses_existing_intent_from_transcript(client_with_fake_llm: AsyncClient, session_id: str) -> None:
+    # Seed a CoachIntentEvent so trigger policy won't fire session role
     await client_with_fake_llm.post(
         f"/sessions/{session_id}/events",
         json={"event": {
