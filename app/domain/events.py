@@ -42,7 +42,7 @@ class TurnSignalEvent(_EventBase):
 
 class TutorInputEvent(_EventBase):
     kind: Literal["tutor_input"] = "tutor_input"
-    mode: Literal["whisper", "steer", "takeover", "annotation"]
+    mode: Literal["whisper", "steer", "takeover", "handback", "annotation"]
     tutor_id: str
     content: str
     target_turn_idx: int | None = None

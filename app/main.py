@@ -23,7 +23,9 @@ app = FastAPI(title="AI Tutor", lifespan=lifespan)
 from app.api import content as content_router  # noqa: E402
 from app.api import learners as learners_router  # noqa: E402
 from app.api import sessions as sessions_router  # noqa: E402
+from app.api import tutors as tutors_router  # noqa: E402
 
 app.include_router(learners_router.router)
 app.include_router(sessions_router.router)
 app.include_router(content_router.router)
+app.include_router(tutors_router.router)
