@@ -56,3 +56,18 @@ async def test_update_program_state_merges_skills(db_pool: None) -> None:
     )
     assert "skill-a" in updated.program_states["prog-1"]
     assert "skill-b" in updated.program_states["prog-1"]
+
+
+@pytest.mark.asyncio
+async def test_update_portrait(db_pool: None) -> None:
+    learner = await learners.insert(LearnerCreate(name="Alice"))
+    updated = await learners.update_portrait(learner.id, "Alice is a quick learner.")
+    assert updated.portrait_md == "Alice is a quick learner."
+
+
+@pytest.mark.asyncio
+async def test_update_portrait_overwrites_previous(db_pool: None) -> None:
+    learner = await learners.insert(LearnerCreate(name="Bob"))
+    await learners.update_portrait(learner.id, "First portrait.")
+    updated = await learners.update_portrait(learner.id, "Updated portrait.")
+    assert updated.portrait_md == "Updated portrait."

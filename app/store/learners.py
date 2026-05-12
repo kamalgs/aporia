@@ -73,6 +73,20 @@ async def update_program_state(
     return learner
 
 
+async def update_portrait(learner_id: str, portrait_md: str) -> Learner:
+    now = datetime.now(timezone.utc)
+    async with connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "UPDATE learners SET portrait_md = %s, updated_at = %s WHERE id = %s",
+                (portrait_md, now, learner_id),
+            )
+        await conn.commit()
+    learner = await get(learner_id)
+    assert learner is not None
+    return learner
+
+
 async def get(learner_id: str) -> Learner | None:
     async with connection() as conn:
         async with conn.cursor() as cur:
