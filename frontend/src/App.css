@@ -10,6 +10,8 @@
   --header-text: #ffffff;
   --input-bg: #f0f0f0;
   --send-bg: #128c7e;
+  --question-bg: #fef3c7;
+  --question-border: #f59e0b;
   --text-primary: #111b21;
   --text-secondary: #667781;
   --radius: 7.5px;
@@ -21,7 +23,9 @@ html, body, #root { height: 100%; font-family: -apple-system, BlinkMacSystemFont
 .chat-container {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  /* dvh = dynamic viewport height, accounts for mobile keyboard */
+  height: 100dvh;
+  min-height: 100dvh;
   background: var(--tutor-bg);
 }
 
@@ -34,6 +38,7 @@ html, body, #root { height: 100%; font-family: -apple-system, BlinkMacSystemFont
   background: var(--header-bg);
   color: var(--header-text);
   flex-shrink: 0;
+  z-index: 2;
 }
 .avatar {
   width: 2.5rem; height: 2.5rem;
@@ -73,7 +78,8 @@ html, body, #root { height: 100%; font-family: -apple-system, BlinkMacSystemFont
 
 /* ── Messages ── */
 .chat-messages {
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;           /* critical for flex children with overflow */
   overflow-y: auto;
   padding: 1rem;
   display: flex;
@@ -126,12 +132,37 @@ html, body, #root { height: 100%; font-family: -apple-system, BlinkMacSystemFont
   40% { transform: scale(1); }
 }
 
+/* ── Question card ── */
+.question-card {
+  flex-shrink: 0;
+  padding: 0.75rem 1rem;
+  background: var(--question-bg);
+  border-top: 2px solid var(--question-border);
+  text-align: center;
+  z-index: 2;
+}
+.question-text {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.question-card.handoff {
+  background: #fce7f3;
+  border-top-color: #ec4899;
+}
+.handoff-text {
+  font-size: 1rem;
+  font-weight: 500;
+  color: #9d174d;
+}
+
 /* ── Input bar ── */
 .chat-input-bar {
   flex-shrink: 0;
   padding: 0.5rem 0.75rem;
   background: var(--input-bg);
   border-top: 1px solid #d1d7db;
+  z-index: 2;
 }
 .input-wrapper {
   display: flex;

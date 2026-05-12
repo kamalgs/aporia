@@ -206,7 +206,7 @@ class LlmAgent(TutorAgent):
         d = _generate_diagnostic(_SimpleRng(42))
         self._diag = d
         return TutorStep(
-            feedback=f"Let's solve a two-digit addition problem together! What is {d.a} + {d.b}?",
+            feedback="Let's solve a two-digit addition problem together!",
             evaluation=Evaluation(is_correct=False, misconceptions=[], hint=""),
             question=d,
             phase="diagnostic",  # type: ignore[assignment]
@@ -276,7 +276,7 @@ class LlmAgent(TutorAgent):
             + f"\n  phase: {recommended_phase}\n\n"
             f"Generate ONLY the tutor feedback and evaluation for this step.\n"
             f"- If the answer was WRONG, feedback MUST start by naming the specific misconception.\n"
-            f"- If the answer was CORRECT, briefly praise, THEN ask a follow-up question like 'How did you know?' or 'What strategy did you use?' — never just say 'Great job!' alone. Then say 'What is X + Y?' with the recommended problem.\n"
+            f"- If the answer was CORRECT, briefly praise, THEN ask a follow-up question like 'How did you know?' or 'What strategy did you use?' — never just say 'Great job!' alone. Do NOT state the next numerical problem here; the question field will handle that.\n"
             f"- Output MUST use the exact TutorStep JSON schema, with the question matching the recommendation above."
         )
         result = await self._agent.run(prompt)
