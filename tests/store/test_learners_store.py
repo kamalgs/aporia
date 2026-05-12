@@ -31,3 +31,28 @@ async def test_insert_default_fields(db_pool: None) -> None:
     assert created.portrait_md == ""
     assert created.traits == {}
     assert created.program_states == {}
+
+
+@pytest.mark.asyncio
+async def test_update_program_state(db_pool: None) -> None:
+    learner = await learners.insert(LearnerCreate(name="Alice"))
+    updated = await learners.update_program_state(
+        learner.id,
+        program_id="prog-1",
+        skill_id="skill-a",
+        skill_state={"attempt_count": 1, "correct_count": 1},
+    )
+    assert updated.program_states["prog-1"]["skill-a"]["attempt_count"] == 1
+
+
+@pytest.mark.asyncio
+async def test_update_program_state_merges_skills(db_pool: None) -> None:
+    learner = await learners.insert(LearnerCreate(name="Bob"))
+    await learners.update_program_state(
+        learner.id, "prog-1", skill_id="skill-a", skill_state={"attempt_count": 1}
+    )
+    updated = await learners.update_program_state(
+        learner.id, "prog-1", skill_id="skill-b", skill_state={"attempt_count": 2}
+    )
+    assert "skill-a" in updated.program_states["prog-1"]
+    assert "skill-b" in updated.program_states["prog-1"]

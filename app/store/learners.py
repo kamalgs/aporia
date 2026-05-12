@@ -31,6 +31,48 @@ async def insert(data: LearnerCreate) -> Learner:
     )
 
 
+async def update_program_state(
+    learner_id: str,
+    program_id: str,
+    skill_id: str,
+    skill_state: dict,
+) -> Learner:
+    """Patch program_states[program_id][skill_id] for the given learner."""
+    now = datetime.now(timezone.utc)
+    async with connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                UPDATE learners
+                SET program_states = jsonb_set(
+                    jsonb_set(
+                        program_states,
+                        %s::text[],
+                        COALESCE(program_states->%s, '{}'::jsonb),
+                        true
+                    ),
+                    %s::text[],
+                    %s::jsonb,
+                    true
+                ),
+                updated_at = %s
+                WHERE id = %s
+                """,
+                (
+                    [program_id],
+                    program_id,
+                    [program_id, skill_id],
+                    json.dumps(skill_state),
+                    now,
+                    learner_id,
+                ),
+            )
+        await conn.commit()
+    learner = await get(learner_id)
+    assert learner is not None
+    return learner
+
+
 async def get(learner_id: str) -> Learner | None:
     async with connection() as conn:
         async with conn.cursor() as cur:
