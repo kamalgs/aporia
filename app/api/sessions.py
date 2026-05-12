@@ -4,6 +4,7 @@ from pydantic import BaseModel
 from app.content_registry.registry import registry
 from app.domain.events import CoachIntentEvent, LearnerTextEvent, TranscriptEvent
 from app.domain.session import Session, SessionCreate
+from app.roles.identity_role import get_identity_llm_client, run_identity
 from app.roles.session_role import get_session_llm_client, run_session
 from app.roles.state_updater import apply_turn_signal
 from app.roles.trigger_policy import should_run_session_role
@@ -53,11 +54,37 @@ async def append_event(session_id: str, body: AppendEventRequest) -> None:
 
 
 @router.post("/{session_id}/end", response_model=Session)
-async def end_session(session_id: str, body: EndSessionRequest) -> Session:
+async def end_session(
+    session_id: str,
+    body: EndSessionRequest,
+    identity_llm=Depends(get_identity_llm_client),
+) -> Session:
     session = await sessions_store.get(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
-    return await sessions_store.end(session_id, body.summary_md)
+
+    session = await sessions_store.end(session_id, body.summary_md)
+
+    learner = await learners_store.get(session.learner_id)
+    if learner is None:
+        raise HTTPException(status_code=404, detail="Learner not found")
+
+    reg = registry()
+    program = reg.program(session.program_id)
+    if program is not None:
+        guardian_profile = reg.find_guardian_profile(learner.cohort_tags)
+        program_state = learner.program_states.get(session.program_id, {})
+        new_portrait = await run_identity(
+            program=program,
+            guardian_profile=guardian_profile,
+            prior_portrait=learner.portrait_md,
+            program_state=program_state,
+            transcript=session.transcript,
+            llm_client=identity_llm,
+        )
+        await learners_store.update_portrait(learner.id, new_portrait)
+
+    return session
 
 
 @router.post("/{session_id}/turn", response_model=TurnResponse)
