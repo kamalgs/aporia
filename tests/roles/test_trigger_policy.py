@@ -1,4 +1,4 @@
-from app.domain.events import CoachIntentEvent, TurnSignalEvent, UtteranceEvent
+from app.domain.events import CoachIntentEvent, TurnSignalEvent, TutorInputEvent, UtteranceEvent
 from app.roles.trigger_policy import MASTERY_THRESHOLD, should_run_session_role
 
 
@@ -51,3 +51,20 @@ def test_non_signal_events_between_signals_ignored() -> None:
         _signal(True),
     ]
     assert should_run_session_role(transcript, {}) is True
+
+
+def test_pending_whisper_after_intent_triggers() -> None:
+    transcript = [
+        CoachIntentEvent(goal="warm_up", skill_id="add-1digit"),
+        TutorInputEvent(mode="whisper", tutor_id="t1", content="go easier"),
+    ]
+    assert should_run_session_role(transcript, {}) is True
+
+
+def test_whisper_before_intent_does_not_double_trigger() -> None:
+    """Whisper consumed by the existing intent — no re-trigger on threshold alone."""
+    transcript = [
+        TutorInputEvent(mode="whisper", tutor_id="t1", content="go easier"),
+        CoachIntentEvent(goal="teach", skill_id="add-1digit"),
+    ]
+    assert should_run_session_role(transcript, {}) is False

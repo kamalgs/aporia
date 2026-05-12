@@ -54,6 +54,7 @@ def _build_session_prompt(
     coach_profile: CoachProfile | None,
     learner_portrait: str,
     program_state: dict,
+    pending_guidance: str = "",
 ) -> str:
     skills_list = ", ".join(program.skill_ids)
     mandatory_list = ", ".join(program.mandatory_skill_ids)
@@ -77,6 +78,8 @@ def _build_session_prompt(
         lines += ["LEARNER PORTRAIT:", learner_portrait, ""]
     if program_state:
         lines += ["PROGRAM STATE (per-skill progress):", json.dumps(program_state, indent=2), ""]
+    if pending_guidance:
+        lines += ["TUTOR GUIDANCE (incorporate into your decision):", pending_guidance, ""]
     lines += [
         "Review the recent transcript and progress data above.",
         "Decide what to do next: which skill to focus on, what goal, and how hard.",
@@ -109,6 +112,7 @@ async def run_session(
     program_state: dict,
     transcript_window: list[TranscriptEvent],
     llm_client: Any,
+    pending_guidance: str = "",
 ) -> CoachIntentEvent:
     """Call the session-level LLM role and return a CoachIntentEvent."""
     messages = _format_transcript_for_session(transcript_window)
@@ -117,7 +121,9 @@ async def run_session(
 
     response = llm_client.messages.create(
         model=SESSION_MODEL,
-        system=_build_session_prompt(program, coach_profile, learner_portrait, program_state),
+        system=_build_session_prompt(
+            program, coach_profile, learner_portrait, program_state, pending_guidance
+        ),
         messages=messages,
         tools=[_SET_INTENT_TOOL],
         tool_choice={"type": "any"},
