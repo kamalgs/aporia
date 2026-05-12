@@ -2,6 +2,7 @@ from typing import AsyncIterator
 
 import pytest
 import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
 from testcontainers.postgres import PostgresContainer
 
 from app.store import db
@@ -16,7 +17,6 @@ def postgres_container():
 @pytest.fixture(scope="session")
 def database_url(postgres_container: PostgresContainer) -> str:
     raw = postgres_container.get_connection_url()
-    # testcontainers returns SQLAlchemy-style URL; psycopg wants postgresql://
     return raw.replace("postgresql+psycopg2://", "postgresql://")
 
 
@@ -30,3 +30,10 @@ async def db_pool(database_url: str) -> AsyncIterator[None]:
             await cur.execute("TRUNCATE TABLE sessions, learners CASCADE;")
         await conn.commit()
     await db.close_pool()
+
+
+@pytest_asyncio.fixture
+async def client(db_pool: None) -> AsyncIterator[AsyncClient]:
+    from app.main import app
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        yield ac
