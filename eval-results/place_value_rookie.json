@@ -2,7 +2,7 @@
   "name": "Place-Value Rookie",
   "student_type": "place_value_concat",
   "max_turns": 8,
-  "transcript": "  Tutor feedback: Let's start with a problem. What is 25 + 36?\n  Tutor asks: What is 88 + 99?\nStudent: 8899\n  Tutor feedback: Think about what each digit means. The tens digit is not just another number to attach to the end.\n    → Evaluation: WRONG | misconception(s): place_value\n  Tutor asks: What is 5 + 9?\nStudent: 59\n  Tutor feedback: The plus sign means we add the numbers, not put them side by side. What is 5 + 6 really?\n    → Evaluation: WRONG | misconception(s): place_value\n  Tutor asks: What is 9 + 8?\nStudent: 98\n  Tutor feedback: You have been getting these wrong for a few tries now — that is perfectly okay! Let me connect you with a human tutor who can walk through this together with you.\n    → Evaluation: WRONG | misconception(s): place_value",
+  "transcript": "  Tutor feedback: Let's solve a two-digit addition problem together!\n  Tutor asks: What is 88 + 99?\nStudent: 8899\n  Tutor feedback: Think about what each digit means. The tens digit is not just another number to attach to the end.\n    → Evaluation: WRONG | misconception(s): place_value\n  Tutor asks: What is 9 + 5?\nStudent: 95\n  Tutor feedback: The plus sign means we add the numbers, not put them side by side. What is 5 + 6 really?\n    → Evaluation: WRONG | misconception(s): place_value\n  Tutor asks: What is 8 + 7?\nStudent: 87\n  Tutor feedback: You have been getting these wrong for a few tries now — that is perfectly okay! Let me connect you with a human tutor who can walk through this together with you.\n    → Evaluation: WRONG | misconception(s): place_value",
   "final_phase": "complete",
   "turn_count": 3,
   "socratic_quality": 2,
@@ -10,6 +10,6 @@
   "never_reveals_answer": true,
   "diagnoses_specifically": true,
   "overall_pass": false,
-  "rationale": "The tutor correctly names the 'place_value' misconception specifically ('The tens digit is not just another number to attach to the end'), but fails at Socratic scaffolding: after wrong answers on hard problems (88+99, 5+9, 9+8), the tutor jumps between difficulty levels non-monotonically (88+99 → 5+9 → 9+8) without building from mastered prerequisites, then abandons Socratic method entirely by escalating to human tutor ('Let me connect you with a human tutor') rather than continuing guided questioning.",
+  "rationale": "The tutor correctly names the 'place_value' misconception specifically, but fails to scaffold: after 88+99→8899, the tutor jumps to 9+5 rather than a simpler place-value exercise, then abandons the student after three errors without ever building back up ('Let me connect you with a human tutor'). The tutor also never guides the student to discover why place value matters through questions—they only state the misconception after the fact.",
   "failure_reason": null
 }

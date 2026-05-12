@@ -13,3 +13,6 @@ dist/
 
 # Misc
 .env
+.pytest_cache/
+.coverage
+*.pyo
