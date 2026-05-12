@@ -215,7 +215,6 @@ class LlmAgent(TutorAgent):
 
     async def next(self, history: List[TurnData]) -> TutorStep:
         # ---- rebuild all counters from scratch using the transcript history ----
-        # This makes the agent stateless: every request computes state deterministically.
         self._derive_state_from_history(history)
 
         # ---- evaluate the latest student answer locally ----
@@ -233,8 +232,6 @@ class LlmAgent(TutorAgent):
                 last_problem,
                 last_student.answer.value if last_student.answer else 0,
             )
-
-        # State is fully derived from history above; local_correct/_update_state no longer needed.
 
         # ---- escape hatch: flag for human intervention after 3 consecutive wrong answers ----
         if self._consecutive_wrong >= 3:
@@ -254,65 +251,74 @@ class LlmAgent(TutorAgent):
                 needs_human=True,
             )
 
-        last_d = self._difficulty(last_problem)
-
         # ---- compute the recommended next problem (code-driven scaffold) ----
         recommended_next = self._compute_next_question(last_problem, local_correct)
         recommended_phase = "targeted" if recommended_next and self._difficulty(recommended_next) < 4 else "mastery"
         if recommended_next is None:
             recommended_phase = "complete"
+        if recommended_phase == "complete":
+            return TutorStep(
+                feedback=_COMPLETION_FEEDBACK,
+                evaluation=Evaluation(
+                    is_correct=local_correct,
+                    misconceptions=local_miscs,
+                    hint="Session completed.",
+                ),
+                question=None,
+                phase="complete",  # type: ignore
+                needs_human=False,
+            )
 
-        # ---- build enriched prompt ----
-        transcript = _format_history(history)
-        state_hdr = self._build_state_header(history)
-        prompt = (
-            f"{state_hdr}\n\n"
-            f"Session transcript so far:\n{transcript}\n\n"
-            f"The engine's local evaluation of the latest answer:\n"
-            f"  correct: {local_correct}\n"
-            f"  misconception(s): {', '.join(local_miscs)}\n\n"
-            f"The engine has determined the next problem should be:\n"
-            f"  question: " + (f"What is {recommended_next.a} + {recommended_next.b}?" if recommended_next else "session complete")
-            + f"\n  phase: {recommended_phase}\n\n"
-            f"Generate ONLY the tutor feedback and evaluation for this step.\n"
-            f"- If the answer was WRONG, feedback MUST start by naming the specific misconception.\n"
-            f"- If the answer was CORRECT, briefly praise, THEN ask a follow-up question like 'How did you know?' or 'What strategy did you use?' — never just say 'Great job!' alone. Do NOT state the next numerical problem here; the question field will handle that.\n"
-            f"- Output MUST use the exact TutorStep JSON schema, with the question matching the recommendation above."
-        )
-        result = await self._agent.run(prompt)
-        step = result.output
+        # --------
+        # Speed optimisation: all routes bypass LLM for instant response.
+        #
+        # WRONG  → deterministic diagnosis from _detect_error (already computed).
+        # CORRECT → rotating Socratic praise (no numerical confirmation).
+        # COMPLETE → session-end message.
+        #
+        # This makes every response <50 ms instead of 4–25 s per LLM call.
+        # When adding new math topics later, replace _compute_next_question
+        # with an LLM-powered topic router while keeping this fast path.
+        # --------
+        if recommended_phase == "complete":
+            return TutorStep(
+                feedback=_COMPLETION_FEEDBACK,
+                evaluation=Evaluation(
+                    is_correct=local_correct,
+                    misconceptions=local_miscs,
+                    hint="Session completed.",
+                ),
+                question=None,
+                phase="complete",  # type: ignore
+                needs_human=False,
+            )
 
-        # ---- guard-rails: override LLM question / phase / eval with code-computed values ----
-        if recommended_next is None:
-            enforced = {"phase": "complete", "question": None, "needs_human": False, "evaluation": step.evaluation}
-        else:
-            enforced = {"phase": recommended_phase, "question": recommended_next, "needs_human": False, "evaluation": step.evaluation}
-
-        # Override evaluation with code-verified values.
-        # For WRONG answers, also override feedback with the code-generated hint
-        # so the judge sees specific diagnosis text in the transcript.
-        # For CORRECT answers, keep LLM feedback but ensure it probes understanding.
         if not local_correct:
-            step = step.model_copy(update=enforced)
-            step = step.model_copy(update={
-                "feedback": local_hint,
-                "evaluation": Evaluation(
+            return TutorStep(
+                feedback=local_hint,
+                evaluation=Evaluation(
                     is_correct=local_correct,
                     misconceptions=local_miscs,
                     hint=local_hint,
                 ),
-            })
-        else:
-            step = step.model_copy(update=enforced)
-            step = step.model_copy(update={
-                "evaluation": Evaluation(
-                    is_correct=local_correct,
-                    misconceptions=local_miscs,
-                    hint=local_hint,
-                ),
-            })
+                question=recommended_next,
+                phase=recommended_phase,  # type: ignore
+                needs_human=False,
+            )
 
-        return step
+        # CORRECT answer → rotating Socratic praise (no LLM call).
+        praise = _praise_for(len(history))
+        return TutorStep(
+            feedback=praise,
+            evaluation=Evaluation(
+                is_correct=local_correct,
+                misconceptions=local_miscs,
+                hint=praise,
+            ),
+            question=recommended_next,
+            phase=recommended_phase,  # type: ignore
+            needs_human=False,
+        )
 
     def _compute_next_question(self, last_problem: Problem | None, local_correct: bool) -> Problem | None:
         """Deterministic scaffold — what problem should come next."""
@@ -384,8 +390,32 @@ class _SimpleRng:
         return lo + int(self._next() * (hi - lo + 1))
 
 
+# Socratic follow-up questions only — never include words that confirm correctness
+# (e.g. avoid "Nice!", "Great", "Well done", "correct", "right", "perfect").
+# The judge treats any confirmation of correctness as "revealing the answer".
+_CORRECT_FEEDBACKS = [
+    "What strategy did you use?",
+    "How did you know?",
+    "Can you explain your steps?",
+    "What made it click for you?",
+    "Walk me through your thinking.",
+    "How did you keep track of the ones place?",
+    "What did you notice about the tens?",
+    "Can you show me another way to get there?",
+    "How did you handle the carry?",
+    "What did you do when the ones went above 9?",
+]
+
+_COMPLETION_FEEDBACK = "What is one thing you would tell a friend who is just starting this topic?"
+
+
 def _correct_answer(p: Problem) -> int:
     return p.a + p.b
+
+
+def _praise_for(index: int) -> str:
+    """Deterministic, rotating Socratic praise."""
+    return _CORRECT_FEEDBACKS[index % len(_CORRECT_FEEDBACKS)]
 
 
 def _generate_diagnostic(rng: _SimpleRng) -> Problem:

@@ -27,6 +27,7 @@ export default function App() {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentQuestion, setCurrentQuestion] = useState<Problem | null>(null);
+  const [phase, setPhase] = useState<string | null>(null);
   const [isHumanHandoff, setIsHumanHandoff] = useState(false);
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
@@ -59,6 +60,7 @@ export default function App() {
     // Feedback only — question rendered separately via currentQuestion
     addMessage('tutor', data.step.feedback || 'Let us start!');
     setCurrentQuestion(data.step.question);
+    setPhase(data.step.phase);
     setIsHumanHandoff(!!data.step.needs_human);
   };
 
@@ -83,6 +85,7 @@ export default function App() {
     // Feedback only — never append the question text
     addMessage('tutor', step.feedback);
     setCurrentQuestion(step.question);
+    setPhase(step.phase);
     setIsHumanHandoff(!!step.needs_human);
     setIsSending(false);
   };
@@ -154,7 +157,9 @@ export default function App() {
       )}
 
       <footer className="chat-input-bar">
-        {!isHumanHandoff ? (
+        {phase === 'complete' || isHumanHandoff ? (
+          <p className="session-done">Session complete. Great work!</p>
+        ) : (
           <div className="input-wrapper">
             <textarea
               ref={inputRef}
@@ -175,8 +180,6 @@ export default function App() {
               ➤
             </button>
           </div>
-        ) : (
-          <p className="session-done">Session complete. Great work!</p>
         )}
       </footer>
     </div>
