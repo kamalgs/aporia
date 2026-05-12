@@ -35,5 +35,6 @@ class GuardianProfile(BaseModel):
     id: str
     title: str
     cohort_description: str = ""
+    cohort_tags: list[str] = []
     defaults: dict = {}
     raw_md: str = ""

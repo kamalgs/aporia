@@ -47,6 +47,13 @@ class ContentRegistry:
     def guardian_profile(self, profile_id: str) -> GuardianProfile | None:
         return self._guardian_profiles.get(profile_id)
 
+    def find_guardian_profile(self, learner_tags: list[str]) -> "GuardianProfile | None":
+        """Return the first profile whose cohort_tags overlap with the learner's tags."""
+        for profile in self._guardian_profiles.values():
+            if any(tag in profile.cohort_tags for tag in learner_tags):
+                return profile
+        return None
+
 
 _registry: ContentRegistry | None = None
 

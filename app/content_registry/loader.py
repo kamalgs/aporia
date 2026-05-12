@@ -69,6 +69,7 @@ def load_guardian_profiles(content_dir: Path) -> list[GuardianProfile]:
             id=meta.get("id", _slug(path)),
             title=meta.get("title", _slug(path)),
             cohort_description=meta.get("cohort_description", ""),
+            cohort_tags=meta.get("cohort_tags", []),
             defaults=meta.get("defaults", {}),
             raw_md=post.content,
         ))

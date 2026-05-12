@@ -111,3 +111,27 @@ def test_empty_content_dir(tmp_path: Path) -> None:
     reg = ContentRegistry(tmp_path)
     assert reg.skills() == []
     assert reg.programs() == []
+
+
+def test_guardian_profile_cohort_tags(content_dir: Path) -> None:
+    profiles = load_guardian_profiles(content_dir)
+    assert profiles[0].cohort_tags == []  # tmp fixture has no cohort_tags
+
+
+def test_find_guardian_profile_by_tag(tmp_path: Path) -> None:
+    for sub in ("skills", "programs", "coach_profiles", "guardian_profiles"):
+        (tmp_path / sub).mkdir()
+    (tmp_path / "guardian_profiles" / "child.md").write_text(textwrap.dedent("""
+        ---
+        id: child
+        title: Child
+        cohort_tags:
+          - child
+          - elementary
+        ---
+        Body.
+    """).strip())
+    reg = ContentRegistry(tmp_path)
+    assert reg.find_guardian_profile(["child"]) is not None
+    assert reg.find_guardian_profile(["adult"]) is None
+    assert reg.find_guardian_profile([]) is None
