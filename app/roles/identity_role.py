@@ -31,7 +31,7 @@ class IdentityDeps:
 
 
 _identity_agent: Agent[IdentityDeps, IdentityOutput] = Agent(
-    model=AnthropicModel(IDENTITY_MODEL),
+    model=f"anthropic:{IDENTITY_MODEL}",
     output_type=IdentityOutput,
     deps_type=IdentityDeps,
 )

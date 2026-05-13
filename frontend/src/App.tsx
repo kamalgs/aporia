@@ -1,115 +1,144 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, FormEvent } from 'react';
 import './App.css';
+import { createLearner, createSession, sendTurn, endSession } from './api';
 
-type Problem = { operation: 'add'; a: number; b: number };
-type Evaluation = { is_correct: boolean; misconceptions: string[]; hint: string };
-type TutorStep = { feedback: string; evaluation: Evaluation; question: Problem | null; phase: string; needs_human?: boolean };
-type SessionCreated = { session_id: string; step: TutorStep };
-type Message = {
+type Phase = 'welcome' | 'chat' | 'ended';
+
+interface Message {
   id: string;
-  role: 'tutor' | 'student';
+  role: 'tutor' | 'learner';
   text: string;
+  onTarget?: boolean;
   time: string;
-};
-
-const API_BASE = import.meta.env.PROD ? '' : '/api';
-
-function formatTime(): string {
-  const now = new Date();
-  return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
-function questionText(q: Problem): string {
-  return `What is ${q.a} + ${q.b}?`;
+function now() {
+  return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
+
+function tutorMsg(text: string): Message {
+  return { id: crypto.randomUUID(), role: 'tutor', text, time: now() };
+}
+
+function learnerMsg(text: string, onTarget?: boolean): Message {
+  return { id: crypto.randomUUID(), role: 'learner', text, onTarget, time: now() };
 }
 
 export default function App() {
+  const [phase, setPhase] = useState<Phase>('welcome');
+  const [name, setName] = useState('');
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [currentQuestion, setCurrentQuestion] = useState<Problem | null>(null);
-  const [phase, setPhase] = useState<string | null>(null);
-  const [isHumanHandoff, setIsHumanHandoff] = useState(false);
   const [input, setInput] = useState('');
-  const [isSending, setIsSending] = useState(false);
+  const [isWaiting, setIsWaiting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, isWaiting]);
 
   useEffect(() => {
-    // Focus input when a question appears (so keyboard opens on mobile)
-    if (currentQuestion && inputRef.current) {
-      inputRef.current.focus();
+    if (phase === 'chat') inputRef.current?.focus();
+  }, [phase]);
+
+  async function handleStart(e: FormEvent) {
+    e.preventDefault();
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    setIsWaiting(true);
+    setError(null);
+    try {
+      const learner = await createLearner(trimmed);
+      const session = await createSession(learner.id);
+      setSessionId(session.id);
+      // Auto-send a start signal so the session role fires and the learner sees a problem immediately
+      const result = await sendTurn(session.id, "Let's start!");
+      setMessages([tutorMsg(result.utterance)]);
+      setPhase('chat');
+    } catch (err) {
+      setError('Could not start session. Is the server running?');
+    } finally {
+      setIsWaiting(false);
     }
-  }, [currentQuestion]);
+  }
 
-  const addMessage = (role: 'tutor' | 'student', text: string) => {
-    setMessages((m) => [...m, { id: crypto.randomUUID(), role, text, time: formatTime() }]);
-  };
-
-  const startSession = async () => {
-    const res = await fetch(`${API_BASE}/sessions`, { method: 'POST' });
-    if (!res.ok) {
-      addMessage('tutor', 'Sorry, I could not start a session. Please try again.');
-      return;
-    }
-    const data: SessionCreated = await res.json();
-    setSessionId(data.session_id);
-    // Feedback only — question rendered separately via currentQuestion
-    addMessage('tutor', data.step.feedback || 'Let us start!');
-    setCurrentQuestion(data.step.question);
-    setPhase(data.step.phase);
-    setIsHumanHandoff(!!data.step.needs_human);
-  };
-
-  const sendMessage = async () => {
-    if (!sessionId || !input.trim() || isSending) return;
+  async function handleSend() {
+    if (!sessionId || !input.trim() || isWaiting) return;
     const text = input.trim();
     setInput('');
-    setIsSending(true);
-    addMessage('student', text);
-
-    const res = await fetch(`${API_BASE}/sessions/${sessionId}/answer`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
-    });
-    if (!res.ok) {
-      addMessage('tutor', 'Something went wrong. Try again?');
-      setIsSending(false);
-      return;
+    setIsWaiting(true);
+    setMessages((m) => [...m, learnerMsg(text)]);
+    try {
+      const result = await sendTurn(sessionId, text);
+      setMessages((m) => {
+        const updated = [...m];
+        const lastLearner = [...updated].reverse().find((x) => x.role === 'learner');
+        if (lastLearner) lastLearner.onTarget = result.turn_signal.on_target;
+        return [...updated, tutorMsg(result.utterance)];
+      });
+    } catch {
+      setMessages((m) => [...m, tutorMsg('Something went wrong. Please try again.')]);
+    } finally {
+      setIsWaiting(false);
     }
-    const step: TutorStep = await res.json();
-    // Feedback only — never append the question text
-    addMessage('tutor', step.feedback);
-    setCurrentQuestion(step.question);
-    setPhase(step.phase);
-    setIsHumanHandoff(!!step.needs_human);
-    setIsSending(false);
-  };
+  }
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+  async function handleEnd() {
+    if (!sessionId) return;
+    try {
+      await endSession(sessionId);
+    } catch {
+      // best-effort
+    }
+    setMessages((m) => [...m, tutorMsg('Great work today! Session complete.')]);
+    setPhase('ended');
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      sendMessage();
+      handleSend();
     }
-  };
+  }
 
-  if (!sessionId) {
+  if (phase === 'welcome') {
     return (
       <div className="chat-container">
         <header className="chat-header">
           <div className="avatar">T</div>
           <div className="header-info">
-            <h1>Socratic Tutor</h1>
-            <span className="status">Tap to start</span>
+            <h1>AI Tutor</h1>
+            <span className="status">Ready</span>
           </div>
         </header>
-        <main className="chat-empty">
-          <p>Learn addition by solving problems together.</p>
-          <button className="start-button" onClick={startSession}>Start Session</button>
+        <main className="welcome-view">
+          <div className="welcome-card">
+            <h2>Welcome!</h2>
+            <p>Practice math with your AI tutor.</p>
+            <form onSubmit={handleStart} className="welcome-form">
+              <label htmlFor="learner-name">What's your name?</label>
+              <input
+                id="learner-name"
+                type="text"
+                className="name-input"
+                placeholder="Enter your name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                autoFocus
+                disabled={isWaiting}
+              />
+              {error && <p className="error-msg">{error}</p>}
+              <button
+                type="submit"
+                className="start-button"
+                disabled={isWaiting || !name.trim()}
+              >
+                {isWaiting ? 'Starting…' : 'Start Learning'}
+              </button>
+            </form>
+          </div>
         </main>
       </div>
     );
@@ -118,11 +147,16 @@ export default function App() {
   return (
     <div className="chat-container">
       <header className="chat-header">
-        <div className="avatar">T</div>
+        <div className="avatar">{name.charAt(0).toUpperCase() || 'T'}</div>
         <div className="header-info">
-          <h1>Socratic Tutor</h1>
-          <span className="status">online</span>
+          <h1>AI Tutor</h1>
+          <span className="status">{phase === 'ended' ? 'Session ended' : 'online'}</span>
         </div>
+        {phase === 'chat' && (
+          <button className="end-button" onClick={handleEnd} title="End session">
+            End
+          </button>
+        )}
       </header>
 
       <main className="chat-messages" aria-label="conversation">
@@ -131,10 +165,17 @@ export default function App() {
             <div className="message-bubble">
               <p>{m.text}</p>
             </div>
-            <time className="message-time">{m.time}</time>
+            <div className="message-footer">
+              <time className="message-time">{m.time}</time>
+              {m.role === 'learner' && m.onTarget !== undefined && (
+                <span className={`on-target-icon ${m.onTarget ? 'correct' : 'incorrect'}`}>
+                  {m.onTarget ? '✓' : '✗'}
+                </span>
+              )}
+            </div>
           </article>
         ))}
-        {isSending && (
+        {isWaiting && (
           <article className="message tutor">
             <div className="message-bubble typing">
               <span className="dot" /><span className="dot" /><span className="dot" />
@@ -144,37 +185,25 @@ export default function App() {
         <div ref={endRef} />
       </main>
 
-      {/* Question card — always visible above the input bar */}
-      {currentQuestion && !isHumanHandoff && (
-        <section className="question-card" aria-label="current question">
-          <p className="question-text">{questionText(currentQuestion)}</p>
-        </section>
-      )}
-      {isHumanHandoff && (
-        <section className="question-card handoff" aria-label="handoff notice">
-          <p className="handoff-text">👋 Connecting you with a human tutor…</p>
-        </section>
-      )}
-
       <footer className="chat-input-bar">
-        {phase === 'complete' || isHumanHandoff ? (
-          <p className="session-done">Session complete. Great work!</p>
+        {phase === 'ended' ? (
+          <p className="session-done">Session complete. Well done, {name}!</p>
         ) : (
           <div className="input-wrapper">
             <textarea
               ref={inputRef}
               className="chat-textarea"
               rows={1}
-              placeholder={currentQuestion ? 'Type your answer…' : 'Type your answer or reasoning…'}
+              placeholder="Type your answer…"
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              disabled={isSending}
+              disabled={isWaiting}
             />
             <button
               className="send-button"
-              onClick={sendMessage}
-              disabled={isSending || !input.trim()}
+              onClick={handleSend}
+              disabled={isWaiting || !input.trim()}
               aria-label="Send"
             >
               ➤

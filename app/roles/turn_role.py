@@ -34,7 +34,7 @@ class TurnDeps:
 
 
 _turn_agent: Agent[TurnDeps, TurnOutput] = Agent(
-    AnthropicModel(TURN_MODEL),
+    f"anthropic:{TURN_MODEL}",
     output_type=TurnOutput,
     deps_type=TurnDeps,
 )

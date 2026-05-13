@@ -4,7 +4,7 @@ from pathlib import Path
 from fastapi import FastAPI
 
 from app.config import get_settings
-from app.content_registry import registry as content_registry_module
+from app.content_registry import init_registry
 from app.store import db
 
 
@@ -13,7 +13,7 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     db.run_migrations(settings.database_url)
     await db.init_pool(settings.database_url)
-    content_registry_module.init_registry(Path(settings.content_dir))
+    init_registry(Path(settings.content_dir))
     yield
     await db.close_pool()
 

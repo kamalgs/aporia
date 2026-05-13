@@ -37,7 +37,7 @@ class SessionDeps:
 
 
 _session_agent: Agent[SessionDeps, SessionOutput] = Agent(
-    model=AnthropicModel(SESSION_MODEL),
+    model=f"anthropic:{SESSION_MODEL}",
     output_type=SessionOutput,
     deps_type=SessionDeps,
 )
