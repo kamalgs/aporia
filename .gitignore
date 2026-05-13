@@ -1,18 +1,39 @@
 # Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
 .venv/
+venv/
+env/
+
+# Testing & coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.mypy_cache/
+.ruff_cache/
 
 # Node
 node_modules/
-dist/
 
 # IDE
 .vscode/
 .idea/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.*
+!.env.example
 
 # Misc
-.env
-.pytest_cache/
-.coverage
-*.pyo
+*.log
