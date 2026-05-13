@@ -1,3 +1,4 @@
+import json
 from types import SimpleNamespace
 
 import pytest
@@ -127,3 +128,95 @@ async def test_turn_uses_existing_intent_from_transcript(client_with_fake_llm: A
 async def test_turn_empty_text_still_responds(client_with_fake_llm: AsyncClient, session_id: str) -> None:
     resp = await client_with_fake_llm.post(f"/sessions/{session_id}/turn", json={"text": ""})
     assert resp.status_code == 200
+
+
+# ── Speculation cache tests ───────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_speculation_cache_hit_skips_turn_llm(client_with_fake_llm: AsyncClient, session_id: str) -> None:
+    """Seeding the speculation cache causes the cached utterance to be returned."""
+    from app.speculation import cache as get_cache
+
+    # Seed add-2digit-carry intent directly — "73" appears in its mistake[0] description
+    await client_with_fake_llm.post(
+        f"/sessions/{session_id}/events",
+        json={"event": {
+            "kind": "coach_intent",
+            "goal": "drill",
+            "skill_id": "add-2digit-carry",
+            "difficulty_hint": "same",
+        }},
+    )
+    get_cache().put(session_id, "add-2digit-carry", "drill", "same", 0, "CACHED_UTTERANCE")
+
+    resp = await client_with_fake_llm.post(f"/sessions/{session_id}/turn", json={"text": "73"})
+    assert resp.status_code == 200
+    assert resp.json()["utterance"] == "CACHED_UTTERANCE"
+
+
+@pytest.mark.asyncio
+async def test_speculation_cache_miss_falls_through_to_live(client_with_fake_llm: AsyncClient, session_id: str) -> None:
+    """On cache miss the normal fake LLM response is returned."""
+    resp = await client_with_fake_llm.post(f"/sessions/{session_id}/turn", json={"text": "hello"})
+    assert resp.status_code == 200
+    assert resp.json()["utterance"] == "What is 47 + 36?"
+
+
+# ── Streaming endpoint tests ──────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_turn_stream_returns_sse(client_with_fake_llm: AsyncClient, session_id: str) -> None:
+    resp = await client_with_fake_llm.post(
+        f"/sessions/{session_id}/turn/stream",
+        json={"text": "hello"},
+    )
+    assert resp.status_code == 200
+    assert "text/event-stream" in resp.headers.get("content-type", "")
+
+    lines = [ln for ln in resp.text.split("\n") if ln.startswith("data:")]
+    assert len(lines) >= 2
+
+    events = [json.loads(ln[5:].strip()) for ln in lines]
+    token_events = [e for e in events if e.get("type") == "token"]
+    signal_events = [e for e in events if e.get("type") == "signal"]
+
+    assert len(token_events) >= 1
+    assert "".join(e["text"] for e in token_events).strip() == "What is 47 + 36?"
+    assert len(signal_events) == 1
+    assert signal_events[0]["on_target"] is True
+
+
+@pytest.mark.asyncio
+async def test_turn_stream_appends_events_to_transcript(client_with_fake_llm: AsyncClient, session_id: str) -> None:
+    await client_with_fake_llm.post(f"/sessions/{session_id}/turn/stream", json={"text": "5"})
+    session = (await client_with_fake_llm.get(f"/sessions/{session_id}")).json()
+    kinds = [e["kind"] for e in session["transcript"]]
+    assert "learner_text" in kinds
+    assert "utterance" in kinds
+    assert "turn_signal" in kinds
+
+
+@pytest.mark.asyncio
+async def test_turn_stream_from_cache(client_with_fake_llm: AsyncClient, session_id: str) -> None:
+    from app.speculation import cache as get_cache
+
+    # Seed add-2digit-carry intent directly — "73" appears in its mistake[0] description
+    await client_with_fake_llm.post(
+        f"/sessions/{session_id}/events",
+        json={"event": {
+            "kind": "coach_intent",
+            "goal": "drill",
+            "skill_id": "add-2digit-carry",
+            "difficulty_hint": "same",
+        }},
+    )
+    get_cache().put(session_id, "add-2digit-carry", "drill", "same", 0, "STREAMED_CACHE")
+
+    resp = await client_with_fake_llm.post(
+        f"/sessions/{session_id}/turn/stream", json={"text": "73"}
+    )
+    assert resp.status_code == 200
+    lines = [ln for ln in resp.text.split("\n") if ln.startswith("data:")]
+    events = [json.loads(ln[5:].strip()) for ln in lines]
+    full_text = "".join(e["text"] for e in events if e.get("type") == "token").strip()
+    assert full_text == "STREAMED_CACHE"

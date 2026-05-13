@@ -1,4 +1,6 @@
+import asyncio
 import json
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -6,10 +8,12 @@ from pydantic import BaseModel
 
 from app import event_stream
 from app.content_registry.registry import registry
+from app.domain.content import Skill
 from app.domain.events import (
     CoachIntentEvent,
     LearnerTextEvent,
     TranscriptEvent,
+    TurnSignalEvent,
     TutorInputEvent,
     UtteranceEvent,
 )
@@ -18,7 +22,8 @@ from app.roles.identity_role import get_identity_llm_client, run_identity
 from app.roles.session_role import get_session_llm_client, run_session
 from app.roles.state_updater import apply_turn_signal
 from app.roles.trigger_policy import should_run_session_role
-from app.roles.turn_role import get_llm_client, run_turn
+from app.roles.turn_role import get_llm_client, run_turn, run_turn_for_speculation
+from app.speculation import cache as speculation_cache
 from app.store import learners as learners_store
 from app.store import sessions as sessions_store
 from app.store import tutors as tutors_store
@@ -80,6 +85,54 @@ def _extract_pending_guidance(transcript: list[TranscriptEvent]) -> str:
         if isinstance(e, TutorInputEvent) and e.mode == "whisper"
     ]
     return "\n".join(w.content for w in whispers)
+
+
+async def _speculate_branches(
+    session_id: str,
+    intent: CoachIntentEvent,
+    skill: Skill,
+    llm_client: Any,
+) -> None:
+    """Pre-generate utterances for each common mistake. Best-effort; never blocks the main path."""
+    for idx, mistake_text in enumerate(skill.common_mistakes):
+        try:
+            utterance = await run_turn_for_speculation(
+                intent=intent,
+                skill=skill,
+                mistake_text=mistake_text,
+                llm_client=llm_client,
+            )
+            speculation_cache().put(
+                session_id,
+                intent.skill_id or "",
+                intent.goal,
+                intent.difficulty_hint or "same",
+                idx,
+                utterance,
+            )
+        except Exception:
+            pass
+
+
+def _check_speculation(
+    session_id: str, intent: CoachIntentEvent, skill: Skill, learner_text: str
+) -> tuple[UtteranceEvent, TurnSignalEvent] | None:
+    """Return a cached (utterance, signal) pair if the learner text matches a known mistake."""
+    skill_id = intent.skill_id or ""
+    goal = intent.goal
+    difficulty = intent.difficulty_hint or "same"
+    mistake_idx = speculation_cache().match_mistake(learner_text, skill.common_mistakes)
+    if mistake_idx is None:
+        return None
+    cached = speculation_cache().get(session_id, skill_id, goal, difficulty, mistake_idx)
+    if cached is None:
+        return None
+    utterance = UtteranceEvent(text=cached, skill_id=skill_id)
+    signal = TurnSignalEvent(
+        on_target=False,
+        matched_markers=[skill.common_mistakes[mistake_idx]],
+    )
+    return utterance, signal
 
 
 def _is_taken_over(transcript: list[TranscriptEvent]) -> bool:
@@ -271,29 +324,35 @@ async def annotate_turn(session_id: str, turn_idx: int, body: AnnotateRequest) -
     await event_stream.publish(session_id, evt.model_dump(mode="json"))
 
 
-@router.post("/{session_id}/turn", response_model=TurnResponse)
-async def session_turn(
+async def _run_turn_with_speculation(
     session_id: str,
-    body: TurnRequest,
-    turn_llm=Depends(get_llm_client),
-    session_llm=Depends(get_session_llm_client),
-) -> TurnResponse:
-    session = await sessions_store.get(session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Session not found")
+    session,
+    intent: CoachIntentEvent,
+    skill: Skill,
+    learner_text: str,
+    turn_llm: Any,
+) -> tuple[UtteranceEvent, TurnSignalEvent]:
+    """Return utterance + signal from cache if available, otherwise live LLM call."""
+    cached = _check_speculation(session_id, intent, skill, learner_text)
+    if cached is not None:
+        return cached
+    return await run_turn(
+        intent=intent,
+        skill=skill,
+        transcript_window=session.transcript,
+        learner_text=learner_text,
+        llm_client=turn_llm,
+    )
 
-    if _is_taken_over(session.transcript):
-        raise HTTPException(
-            status_code=409,
-            detail="Session is taken over by tutor; use /tutor-turn instead",
-        )
 
-    learner = await learners_store.get(session.learner_id)
-    if learner is None:
-        raise HTTPException(status_code=404, detail="Learner not found")
-
-    program_state = learner.program_states.get(session.program_id, {})
-
+async def _resolve_intent_and_skill(
+    session_id: str,
+    session,
+    learner,
+    program_state: dict,
+    session_llm: Any,
+) -> tuple[CoachIntentEvent, Skill, Any]:
+    """Run the session role if needed, then return (intent, skill, updated_session)."""
     if should_run_session_role(session.transcript, program_state):
         reg = registry()
         program = reg.program(session.program_id)
@@ -312,12 +371,13 @@ async def session_turn(
         )
         await sessions_store.append_event(session_id, intent)
         await event_stream.publish(session_id, intent.model_dump(mode="json"))
+        speculation_cache().invalidate(session_id)
         session = await sessions_store.get(session_id)
 
     current_intent: CoachIntentEvent | None = None
-    for event in reversed(session.transcript):
-        if isinstance(event, CoachIntentEvent):
-            current_intent = event
+    for ev in reversed(session.transcript):
+        if isinstance(ev, CoachIntentEvent):
+            current_intent = ev
             break
 
     if current_intent is None or current_intent.skill_id is None:
@@ -327,17 +387,39 @@ async def session_turn(
     if skill is None:
         raise HTTPException(status_code=422, detail=f"Skill '{current_intent.skill_id}' not found in registry")
 
+    return current_intent, skill, session
+
+
+@router.post("/{session_id}/turn", response_model=TurnResponse)
+async def session_turn(
+    session_id: str,
+    body: TurnRequest,
+    turn_llm=Depends(get_llm_client),
+    session_llm=Depends(get_session_llm_client),
+) -> TurnResponse:
+    session = await sessions_store.get(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if _is_taken_over(session.transcript):
+        raise HTTPException(status_code=409, detail="Session is taken over by tutor; use /tutor-turn instead")
+
+    learner = await learners_store.get(session.learner_id)
+    if learner is None:
+        raise HTTPException(status_code=404, detail="Learner not found")
+
+    program_state = learner.program_states.get(session.program_id, {})
+    current_intent, skill, session = await _resolve_intent_and_skill(
+        session_id, session, learner, program_state, session_llm
+    )
+
     learner_evt = LearnerTextEvent(text=body.text)
     await sessions_store.append_event(session_id, learner_evt)
     await event_stream.publish(session_id, learner_evt.model_dump(mode="json"))
     session = await sessions_store.get(session_id)
 
-    utterance_event, signal_event = await run_turn(
-        intent=current_intent,
-        skill=skill,
-        transcript_window=session.transcript,
-        learner_text=body.text,
-        llm_client=turn_llm,
+    utterance_event, signal_event = await _run_turn_with_speculation(
+        session_id, session, current_intent, skill, body.text, turn_llm
     )
 
     await sessions_store.append_event(session_id, utterance_event)
@@ -353,7 +435,71 @@ async def session_turn(
         skill_state=updated_state[current_intent.skill_id],
     )
 
+    asyncio.create_task(_speculate_branches(session_id, current_intent, skill, turn_llm))
+
     return TurnResponse(
         utterance=utterance_event.text,
         turn_signal=signal_event.model_dump(mode="json"),
     )
+
+
+@router.post("/{session_id}/turn/stream")
+async def session_turn_stream(
+    session_id: str,
+    body: TurnRequest,
+    turn_llm=Depends(get_llm_client),
+    session_llm=Depends(get_session_llm_client),
+) -> StreamingResponse:
+    """Same logic as /turn but streams the utterance word-by-word as SSE token events."""
+    session = await sessions_store.get(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    if _is_taken_over(session.transcript):
+        raise HTTPException(status_code=409, detail="Session is taken over by tutor")
+
+    learner = await learners_store.get(session.learner_id)
+    if learner is None:
+        raise HTTPException(status_code=404, detail="Learner not found")
+
+    program_state = learner.program_states.get(session.program_id, {})
+    current_intent, skill, session = await _resolve_intent_and_skill(
+        session_id, session, learner, program_state, session_llm
+    )
+
+    learner_evt = LearnerTextEvent(text=body.text)
+    await sessions_store.append_event(session_id, learner_evt)
+    await event_stream.publish(session_id, learner_evt.model_dump(mode="json"))
+    session = await sessions_store.get(session_id)
+
+    utterance_event, signal_event = await _run_turn_with_speculation(
+        session_id, session, current_intent, skill, body.text, turn_llm
+    )
+
+    await sessions_store.append_event(session_id, utterance_event)
+    await event_stream.publish(session_id, utterance_event.model_dump(mode="json"))
+    await sessions_store.append_event(session_id, signal_event)
+    await event_stream.publish(session_id, signal_event.model_dump(mode="json"))
+
+    updated_state = apply_turn_signal(program_state, current_intent.skill_id, signal_event)
+    await learners_store.update_program_state(
+        learner_id=session.learner_id,
+        program_id=session.program_id,
+        skill_id=current_intent.skill_id,
+        skill_state=updated_state[current_intent.skill_id],
+    )
+
+    asyncio.create_task(_speculate_branches(session_id, current_intent, skill, turn_llm))
+
+    utterance_text = utterance_event.text
+    signal_dict = signal_event.model_dump(mode="json")
+
+    async def stream_response():
+        words = utterance_text.split(" ")
+        for i, word in enumerate(words):
+            chunk = word if i == len(words) - 1 else word + " "
+            yield f"data: {json.dumps({'type': 'token', 'text': chunk})}\n\n"
+            await asyncio.sleep(0)
+        yield f"data: {json.dumps({'type': 'signal', **signal_dict})}\n\n"
+
+    return StreamingResponse(stream_response(), media_type="text/event-stream")
