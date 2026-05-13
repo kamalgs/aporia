@@ -9,7 +9,7 @@ from app.domain.events import (
     TurnSignalEvent,
     UtteranceEvent,
 )
-from app.roles.turn_role import run_turn
+from app.roles.turn_role import run_turn, run_turn_for_speculation
 
 
 def _fake_client(utterance: str = "What is 47 + 36?", on_target: bool = True):
@@ -124,3 +124,26 @@ async def test_run_turn_matched_markers_captured() -> None:
     assert "Forgetting to carry" in signal_event.matched_markers
     assert signal_event.affect.get("frustration") == pytest.approx(0.3)
     assert "dropped carry" in signal_event.notes
+
+
+@pytest.mark.asyncio
+async def test_run_turn_for_speculation_returns_utterance_string() -> None:
+    class _FakeMessages:
+        def create(self, **kwargs):
+            return SimpleNamespace(content=[SimpleNamespace(
+                type="tool_use",
+                input={"utterance": "You forgot to carry.", "on_target": False,
+                       "matched_markers": [], "affect": {}, "notes": ""},
+            )])
+
+    class _FakeLLM:
+        messages = _FakeMessages()
+
+    utterance = await run_turn_for_speculation(
+        intent=CoachIntentEvent(goal="drill", skill_id="add-2digit-carry"),
+        skill=_SKILL,
+        mistake_text="Forgetting to carry",
+        llm_client=_FakeLLM(),
+    )
+    assert isinstance(utterance, str)
+    assert len(utterance) > 0

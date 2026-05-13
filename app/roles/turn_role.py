@@ -117,5 +117,29 @@ async def run_turn(
     return utterance, signal
 
 
+async def run_turn_for_speculation(
+    intent: CoachIntentEvent,
+    skill: Skill,
+    mistake_text: str,
+    llm_client: Any,
+) -> str:
+    """Pre-generate the tutor's response for a specific known mistake.
+
+    The learner input is simulated as the mistake text so the LLM crafts
+    the corrective response in advance. Returns the utterance string only;
+    the signal is constructed deterministically from the cache key on a hit.
+    """
+    messages = [{"role": "user", "content": mistake_text}]
+    response = llm_client.messages.create(
+        model=TURN_MODEL,
+        system=_build_system_prompt(intent, skill),
+        messages=messages,
+        tools=[_EMIT_TURN_TOOL],
+        tool_choice={"type": "any"},
+        max_tokens=256,
+    )
+    return response.content[0].input["utterance"]
+
+
 def get_llm_client() -> Anthropic:
     return Anthropic()
