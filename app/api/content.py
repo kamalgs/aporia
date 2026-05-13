@@ -5,13 +5,6 @@ from app.domain.content import CoachProfile, GuardianProfile, Program, Skill
 
 router = APIRouter(prefix="/content", tags=["content"])
 
-_KIND_MAP = {
-    "skills": ("skills", "skill"),
-    "programs": ("programs", "program"),
-    "coach_profiles": ("coach_profiles", "coach_profile"),
-    "guardian_profiles": ("guardian_profiles", "guardian_profile"),
-}
-
 
 @router.get("/skills", response_model=list[Skill])
 async def list_skills() -> list[Skill]:

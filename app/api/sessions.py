@@ -390,20 +390,18 @@ async def _resolve_intent_and_skill(
     return current_intent, skill, session
 
 
-@router.post("/{session_id}/turn", response_model=TurnResponse)
-async def session_turn(
+async def _execute_turn(
     session_id: str,
-    body: TurnRequest,
-    turn_model=Depends(get_turn_model),
-    session_model=Depends(get_session_model),
-) -> TurnResponse:
+    learner_text: str,
+    turn_model: Any,
+    session_model: Any,
+) -> tuple[UtteranceEvent, TurnSignalEvent]:
+    """Shared core for /turn and /turn/stream: validate, run LLM, persist, speculate."""
     session = await sessions_store.get(session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
-
     if _is_taken_over(session.transcript):
         raise HTTPException(status_code=409, detail="Session is taken over by tutor; use /tutor-turn instead")
-
     learner = await learners_store.get(session.learner_id)
     if learner is None:
         raise HTTPException(status_code=404, detail="Learner not found")
@@ -413,13 +411,13 @@ async def session_turn(
         session_id, session, learner, program_state, session_model
     )
 
-    learner_evt = LearnerTextEvent(text=body.text)
+    learner_evt = LearnerTextEvent(text=learner_text)
     await sessions_store.append_event(session_id, learner_evt)
     await event_stream.publish(session_id, learner_evt.model_dump(mode="json"))
     session = await sessions_store.get(session_id)
 
     utterance_event, signal_event = await _run_turn_with_speculation(
-        session_id, session, current_intent, skill, body.text, turn_model
+        session_id, session, current_intent, skill, learner_text, turn_model
     )
 
     await sessions_store.append_event(session_id, utterance_event)
@@ -436,7 +434,17 @@ async def session_turn(
     )
 
     asyncio.create_task(_speculate_branches(session_id, current_intent, skill, turn_model))
+    return utterance_event, signal_event
 
+
+@router.post("/{session_id}/turn", response_model=TurnResponse)
+async def session_turn(
+    session_id: str,
+    body: TurnRequest,
+    turn_model=Depends(get_turn_model),
+    session_model=Depends(get_session_model),
+) -> TurnResponse:
+    utterance_event, signal_event = await _execute_turn(session_id, body.text, turn_model, session_model)
     return TurnResponse(
         utterance=utterance_event.text,
         turn_signal=signal_event.model_dump(mode="json"),
@@ -450,47 +458,8 @@ async def session_turn_stream(
     turn_model=Depends(get_turn_model),
     session_model=Depends(get_session_model),
 ) -> StreamingResponse:
-    """Same logic as /turn but streams the utterance word-by-word as SSE token events."""
-    session = await sessions_store.get(session_id)
-    if session is None:
-        raise HTTPException(status_code=404, detail="Session not found")
-
-    if _is_taken_over(session.transcript):
-        raise HTTPException(status_code=409, detail="Session is taken over by tutor")
-
-    learner = await learners_store.get(session.learner_id)
-    if learner is None:
-        raise HTTPException(status_code=404, detail="Learner not found")
-
-    program_state = learner.program_states.get(session.program_id, {})
-    current_intent, skill, session = await _resolve_intent_and_skill(
-        session_id, session, learner, program_state, session_model
-    )
-
-    learner_evt = LearnerTextEvent(text=body.text)
-    await sessions_store.append_event(session_id, learner_evt)
-    await event_stream.publish(session_id, learner_evt.model_dump(mode="json"))
-    session = await sessions_store.get(session_id)
-
-    utterance_event, signal_event = await _run_turn_with_speculation(
-        session_id, session, current_intent, skill, body.text, turn_model
-    )
-
-    await sessions_store.append_event(session_id, utterance_event)
-    await event_stream.publish(session_id, utterance_event.model_dump(mode="json"))
-    await sessions_store.append_event(session_id, signal_event)
-    await event_stream.publish(session_id, signal_event.model_dump(mode="json"))
-
-    updated_state = apply_turn_signal(program_state, current_intent.skill_id, signal_event)
-    await learners_store.update_program_state(
-        learner_id=session.learner_id,
-        program_id=session.program_id,
-        skill_id=current_intent.skill_id,
-        skill_state=updated_state[current_intent.skill_id],
-    )
-
-    asyncio.create_task(_speculate_branches(session_id, current_intent, skill, turn_model))
-
+    """Stream the utterance word-by-word as SSE token events, then emit a final signal event."""
+    utterance_event, signal_event = await _execute_turn(session_id, body.text, turn_model, session_model)
     utterance_text = utterance_event.text
     signal_dict = signal_event.model_dump(mode="json")
 

@@ -1,5 +1,3 @@
-from types import SimpleNamespace
-
 import pytest
 from httpx import AsyncClient
 from pydantic_ai.messages import ModelResponse, ToolCallPart
@@ -7,35 +5,14 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from app.roles.session_role import get_session_model
 from app.roles.turn_role import get_turn_model
-
-
-def _fake_turn_llm(on_target: bool = True):
-    def _fn(messages: list, info: AgentInfo) -> ModelResponse:
-        tool_name = info.output_tools[0].name
-        return ModelResponse(parts=[ToolCallPart(tool_name, {
-            "utterance": "Good, next question.",
-            "on_target": on_target,
-            "matched_markers": [],
-            "affect": {},
-            "notes": "",
-        })])
-    return FunctionModel(_fn)
-
-
-def _fake_session_model(goal: str = "warm_up", skill_id: str = "add-1digit") -> FunctionModel:
-    def _fn(messages: list, info: AgentInfo) -> ModelResponse:
-        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, {
-            "goal": goal, "skill_id": skill_id,
-            "difficulty_hint": "same", "rationale": "test", "tone_note": None,
-        })])
-    return FunctionModel(_fn)
+from tests.api.helpers import make_fake_session_model, make_fake_turn_model
 
 
 @pytest.fixture
 def client_planning(client: AsyncClient):
     from app.main import app
-    app.dependency_overrides[get_turn_model] = lambda: _fake_turn_llm()
-    app.dependency_overrides[get_session_model] = lambda: _fake_session_model()
+    app.dependency_overrides[get_turn_model] = lambda: make_fake_turn_model()
+    app.dependency_overrides[get_session_model] = lambda: make_fake_session_model()
     yield client
     app.dependency_overrides.clear()
 
@@ -76,7 +53,7 @@ async def test_session_role_fires_after_mastery_threshold(session_setup) -> None
 
     def _counting_session_model():
         call_count["n"] += 1
-        return _fake_session_model(goal="drill", skill_id="add-2digit-carry")
+        return make_fake_session_model(goal="drill", skill_id="add-2digit-carry")
 
     app.dependency_overrides[get_session_model] = _counting_session_model
 

@@ -2,49 +2,17 @@ import json
 
 import pytest
 from httpx import AsyncClient
-from pydantic_ai.messages import ModelResponse, ToolCallPart
-from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from app.roles.session_role import get_session_model
 from app.roles.turn_role import get_turn_model
-
-
-def _make_fake_turn_model(utterance: str = "What is 47 + 36?", on_target: bool = True) -> FunctionModel:
-    def _fn(messages: list, info: AgentInfo) -> ModelResponse:
-        tool_name = info.output_tools[0].name
-        return ModelResponse(parts=[ToolCallPart(tool_name, {
-            "utterance": utterance,
-            "on_target": on_target,
-            "matched_markers": [],
-            "affect": {},
-            "notes": "",
-        })])
-    return FunctionModel(_fn)
-
-
-def _make_fake_session_model(goal: str = "warm_up", skill_id: str = "add-1digit") -> FunctionModel:
-    def _fn(messages: list, info: AgentInfo) -> ModelResponse:
-        tool_name = info.output_tools[0].name
-        return ModelResponse(parts=[ToolCallPart(tool_name, {
-            "goal": goal,
-            "skill_id": skill_id,
-            "difficulty_hint": "same",
-            "rationale": "Starting warm up.",
-            "tone_note": None,
-        })])
-    return FunctionModel(_fn)
+from tests.api.helpers import make_fake_session_model, make_fake_turn_model
 
 
 @pytest.fixture
-def fake_turn_model():
-    return _make_fake_turn_model()
-
-
-@pytest.fixture
-def client_with_fake_llm(client: AsyncClient, fake_turn_model):
+def client_with_fake_llm(client: AsyncClient):
     from app.main import app
-    app.dependency_overrides[get_turn_model] = lambda: fake_turn_model
-    app.dependency_overrides[get_session_model] = lambda: _make_fake_session_model()
+    app.dependency_overrides[get_turn_model] = lambda: make_fake_turn_model(utterance="What is 47 + 36?")
+    app.dependency_overrides[get_session_model] = lambda: make_fake_session_model()
     yield client
     app.dependency_overrides.clear()
 

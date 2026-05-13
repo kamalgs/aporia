@@ -6,44 +6,15 @@ from pydantic_ai.models.function import AgentInfo, FunctionModel
 from app.roles.identity_role import get_identity_model
 from app.roles.session_role import get_session_model
 from app.roles.turn_role import get_turn_model
-
-
-def _fake_turn_llm():
-    def _fn(messages: list, info: AgentInfo) -> ModelResponse:
-        tool_name = info.output_tools[0].name
-        return ModelResponse(parts=[ToolCallPart(tool_name, {
-            "utterance": "Good.",
-            "on_target": True,
-            "matched_markers": [],
-            "affect": {},
-            "notes": "",
-        })])
-    return FunctionModel(_fn)
-
-
-def _fake_session_model() -> FunctionModel:
-    def _fn(messages: list, info: AgentInfo) -> ModelResponse:
-        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, {
-            "goal": "warm_up", "skill_id": "add-1digit",
-            "difficulty_hint": "same", "rationale": "test", "tone_note": None,
-        })])
-    return FunctionModel(_fn)
-
-
-def _fake_identity_model() -> FunctionModel:
-    def _fn(messages: list, info: AgentInfo) -> ModelResponse:
-        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, {
-            "portrait_md": "Portrait.",
-        })])
-    return FunctionModel(_fn)
+from tests.api.helpers import make_fake_identity_model, make_fake_session_model, make_fake_turn_model
 
 
 @pytest.fixture
 def client_all_fakes(client: AsyncClient):
     from app.main import app
-    app.dependency_overrides[get_turn_model] = _fake_turn_llm
-    app.dependency_overrides[get_session_model] = _fake_session_model
-    app.dependency_overrides[get_identity_model] = _fake_identity_model
+    app.dependency_overrides[get_turn_model] = lambda: make_fake_turn_model()
+    app.dependency_overrides[get_session_model] = lambda: make_fake_session_model()
+    app.dependency_overrides[get_identity_model] = lambda: make_fake_identity_model()
     yield client
     app.dependency_overrides.clear()
 
@@ -87,7 +58,7 @@ async def test_whisper_triggers_session_role_on_next_turn(channel_setup) -> None
 
     def _counting_session_model():
         call_count["n"] += 1
-        return _fake_session_model()
+        return make_fake_session_model()
 
     app.dependency_overrides[get_session_model] = _counting_session_model
 
