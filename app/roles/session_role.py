@@ -97,7 +97,7 @@ async def run_session(
     learner_portrait: str,
     program_state: dict,
     transcript_window: list[TranscriptEvent],
-    llm_client: Any = None,
+    model: Any = None,
     pending_guidance: str = "",
 ) -> CoachIntentEvent:
     """Call the session-level LLM role and return a CoachIntentEvent."""
@@ -110,8 +110,8 @@ async def run_session(
     )
     transcript_text = _format_transcript_for_session(transcript_window)
     kwargs: dict[str, Any] = dict(deps=deps)
-    if llm_client is not None:
-        kwargs["model"] = llm_client
+    if model is not None:
+        kwargs["model"] = model
 
     result = await _session_agent.run(transcript_text, **kwargs)
     out = result.output
@@ -119,7 +119,7 @@ async def run_session(
         goal=out.goal,
         skill_id=out.skill_id,
         difficulty_hint=out.difficulty_hint,
-        rationale=out.rationale or "",
+        rationale=out.rationale,
         tone_note=out.tone_note,
     )
 

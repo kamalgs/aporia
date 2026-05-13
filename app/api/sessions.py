@@ -366,7 +366,7 @@ async def _resolve_intent_and_skill(
             learner_portrait=learner.portrait_md,
             program_state=program_state,
             transcript_window=session.transcript,
-            llm_client=session_model,
+            model=session_model,
             pending_guidance=pending_guidance,
         )
         await sessions_store.append_event(session_id, intent)
