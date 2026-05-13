@@ -1,11 +1,9 @@
-from types import SimpleNamespace
-
 import pytest
 from httpx import AsyncClient
 from pydantic_ai.messages import ModelResponse, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
-from app.roles.identity_role import get_identity_llm_client
+from app.roles.identity_role import get_identity_model
 from app.roles.session_role import get_session_model
 from app.roles.turn_role import get_turn_model
 
@@ -32,15 +30,12 @@ def _fake_session_model() -> FunctionModel:
     return FunctionModel(_fn)
 
 
-def _fake_identity_llm():
-    class _FakeMessages:
-        def create(self, **kwargs):
-            return SimpleNamespace(content=[SimpleNamespace(
-                type="tool_use", input={"portrait_md": "Portrait."},
-            )])
-    class _FakeLLM:
-        messages = _FakeMessages()
-    return _FakeLLM()
+def _fake_identity_model() -> FunctionModel:
+    def _fn(messages: list, info: AgentInfo) -> ModelResponse:
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, {
+            "portrait_md": "Portrait.",
+        })])
+    return FunctionModel(_fn)
 
 
 @pytest.fixture
@@ -48,7 +43,7 @@ def client_all_fakes(client: AsyncClient):
     from app.main import app
     app.dependency_overrides[get_turn_model] = _fake_turn_llm
     app.dependency_overrides[get_session_model] = _fake_session_model
-    app.dependency_overrides[get_identity_llm_client] = _fake_identity_llm
+    app.dependency_overrides[get_identity_model] = _fake_identity_model
     yield client
     app.dependency_overrides.clear()
 

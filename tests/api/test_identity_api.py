@@ -1,11 +1,9 @@
-from types import SimpleNamespace
-
 import pytest
 from httpx import AsyncClient
 from pydantic_ai.messages import ModelResponse, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
-from app.roles.identity_role import get_identity_llm_client
+from app.roles.identity_role import get_identity_model
 from app.roles.session_role import get_session_model
 from app.roles.turn_role import get_turn_model
 
@@ -32,16 +30,12 @@ def _fake_session_model() -> FunctionModel:
     return FunctionModel(_fn)
 
 
-def _fake_identity_llm(portrait: str = "Alice is a promising young mathematician."):
-    class _FakeMessages:
-        def create(self, **kwargs):
-            return SimpleNamespace(content=[SimpleNamespace(
-                type="tool_use",
-                input={"portrait_md": portrait},
-            )])
-    class _FakeLLM:
-        messages = _FakeMessages()
-    return _FakeLLM()
+def _fake_identity_model(portrait: str = "Alice is a promising young mathematician.") -> FunctionModel:
+    def _fn(messages: list, info: AgentInfo) -> ModelResponse:
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, {
+            "portrait_md": portrait,
+        })])
+    return FunctionModel(_fn)
 
 
 @pytest.fixture
@@ -49,7 +43,7 @@ def client_with_all_fakes(client: AsyncClient):
     from app.main import app
     app.dependency_overrides[get_turn_model] = _fake_turn_llm
     app.dependency_overrides[get_session_model] = _fake_session_model
-    app.dependency_overrides[get_identity_llm_client] = _fake_identity_llm
+    app.dependency_overrides[get_identity_model] = _fake_identity_model
     yield client
     app.dependency_overrides.clear()
 
@@ -94,20 +88,27 @@ async def test_end_session_status_becomes_ended(learner_and_session) -> None:
 async def test_end_session_uses_prior_portrait(learner_and_session) -> None:
     """When a learner already has a portrait, the identity role receives it as prior_portrait."""
     from app.main import app
-    received_prior = {}
+    received_instructions = {}
 
-    def _capturing_identity_llm():
-        class _FakeMessages:
-            def create(self, **kwargs):
-                received_prior["system"] = kwargs.get("system", "")
-                return SimpleNamespace(content=[SimpleNamespace(
-                    type="tool_use", input={"portrait_md": "Updated portrait."},
-                )])
-        class _FakeLLM:
-            messages = _FakeMessages()
-        return _FakeLLM()
+    from app.roles.identity_role import _identity_agent
 
-    app.dependency_overrides[get_identity_llm_client] = _capturing_identity_llm
+    def _capturing_identity_model() -> FunctionModel:
+        def _fn(messages: list, info: AgentInfo) -> ModelResponse:
+            # In PydanticAI, instructions from @agent.instructions appear on ModelRequest.instructions
+            for msg in messages:
+                if hasattr(msg, "instructions") and msg.instructions and "PRIOR PORTRAIT" in msg.instructions:
+                    received_instructions["system"] = msg.instructions
+                # Also check SystemPromptPart in message parts
+                if hasattr(msg, "parts"):
+                    for part in msg.parts:
+                        if hasattr(part, "content") and isinstance(part.content, str) and "PRIOR PORTRAIT" in part.content:
+                            received_instructions["system"] = part.content
+            return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, {
+                "portrait_md": "Updated portrait.",
+            })])
+        return FunctionModel(_fn)
+
+    app.dependency_overrides[get_identity_model] = _capturing_identity_model
 
     client, learner_id, session_id = learner_and_session
     await client.post(f"/sessions/{session_id}/end", json={})
@@ -117,4 +118,4 @@ async def test_end_session_uses_prior_portrait(learner_and_session) -> None:
     })).json()
     await client.post(f"/sessions/{session2['id']}/end", json={})
 
-    assert "PRIOR PORTRAIT" in received_prior.get("system", "")
+    assert "PRIOR PORTRAIT" in received_instructions.get("system", "")

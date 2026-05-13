@@ -1,6 +1,6 @@
-from types import SimpleNamespace
-
 import pytest
+from pydantic_ai.messages import ModelResponse, ToolCallPart
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from app.domain.content import GuardianProfile, Program
 from app.domain.events import (
@@ -9,25 +9,15 @@ from app.domain.events import (
     TurnSignalEvent,
     UtteranceEvent,
 )
-from app.roles.identity_role import run_identity
+from app.roles.identity_role import _identity_agent, run_identity
 
 
-def _fake_identity_client(portrait: str = "Alice is a confident learner who grasps carrying quickly."):
-    class _FakeMessages:
-        def create(self, **kwargs):
-            return SimpleNamespace(
-                content=[
-                    SimpleNamespace(
-                        type="tool_use",
-                        input={"portrait_md": portrait},
-                    )
-                ]
-            )
-
-    class _FakeClient:
-        messages = _FakeMessages()
-
-    return _FakeClient()
+def _make_identity_model(portrait: str = "Alice is a confident learner who grasps carrying quickly.") -> FunctionModel:
+    def _fn(messages: list, info: AgentInfo) -> ModelResponse:
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, {
+            "portrait_md": portrait,
+        })])
+    return FunctionModel(_fn)
 
 
 _PROGRAM = Program(
@@ -59,39 +49,39 @@ _TRANSCRIPT = [
 
 @pytest.mark.asyncio
 async def test_run_identity_returns_portrait_string() -> None:
-    portrait = await run_identity(
-        program=_PROGRAM,
-        guardian_profile=_GUARDIAN,
-        prior_portrait="",
-        program_state={},
-        transcript=_TRANSCRIPT,
-        llm_client=_fake_identity_client(),
-    )
+    with _identity_agent.override(model=_make_identity_model()):
+        portrait = await run_identity(
+            program=_PROGRAM,
+            guardian_profile=_GUARDIAN,
+            prior_portrait="",
+            program_state={},
+            transcript=_TRANSCRIPT,
+        )
     assert isinstance(portrait, str)
     assert "Alice" in portrait
 
 
 @pytest.mark.asyncio
 async def test_run_identity_with_prior_portrait() -> None:
-    portrait = await run_identity(
-        program=_PROGRAM,
-        guardian_profile=_GUARDIAN,
-        prior_portrait="Alice joined today. Very shy at first.",
-        program_state={"add-2digit-carry": {"consecutive_correct": 2}},
-        transcript=_TRANSCRIPT,
-        llm_client=_fake_identity_client("Alice is becoming more confident session by session."),
-    )
+    with _identity_agent.override(model=_make_identity_model("Alice is becoming more confident session by session.")):
+        portrait = await run_identity(
+            program=_PROGRAM,
+            guardian_profile=_GUARDIAN,
+            prior_portrait="Alice joined today. Very shy at first.",
+            program_state={"add-2digit-carry": {"consecutive_correct": 2}},
+            transcript=_TRANSCRIPT,
+        )
     assert "confident" in portrait
 
 
 @pytest.mark.asyncio
 async def test_run_identity_without_guardian_profile() -> None:
-    portrait = await run_identity(
-        program=_PROGRAM,
-        guardian_profile=None,
-        prior_portrait="",
-        program_state={},
-        transcript=_TRANSCRIPT,
-        llm_client=_fake_identity_client("Learner shows solid grasp of addition."),
-    )
+    with _identity_agent.override(model=_make_identity_model("Learner shows solid grasp of addition.")):
+        portrait = await run_identity(
+            program=_PROGRAM,
+            guardian_profile=None,
+            prior_portrait="",
+            program_state={},
+            transcript=_TRANSCRIPT,
+        )
     assert portrait

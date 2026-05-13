@@ -18,7 +18,7 @@ from app.domain.events import (
     UtteranceEvent,
 )
 from app.domain.session import Session, SessionCreate
-from app.roles.identity_role import get_identity_llm_client, run_identity
+from app.roles.identity_role import get_identity_model, run_identity
 from app.roles.session_role import get_session_model, run_session
 from app.roles.state_updater import apply_turn_signal
 from app.roles.trigger_policy import should_run_session_role
@@ -186,7 +186,7 @@ async def stream_session(session_id: str) -> StreamingResponse:
 async def end_session(
     session_id: str,
     body: EndSessionRequest,
-    identity_llm=Depends(get_identity_llm_client),
+    identity_model=Depends(get_identity_model),
 ) -> Session:
     session = await sessions_store.get(session_id)
     if session is None:
@@ -209,7 +209,7 @@ async def end_session(
             prior_portrait=learner.portrait_md,
             program_state=program_state,
             transcript=session.transcript,
-            llm_client=identity_llm,
+            model=identity_model,
         )
         await learners_store.update_portrait(learner.id, new_portrait)
 
