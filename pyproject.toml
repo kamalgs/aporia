@@ -13,6 +13,7 @@ dependencies = [
     "alembic>=1.14",
     "sqlalchemy>=2.0",
     "anthropic>=0.49",
+    "pydantic-ai[anthropic,openai]>=1.94.0",
 ]
 
 [project.optional-dependencies]
@@ -27,3 +28,6 @@ dev = [
 testpaths = ["tests"]
 asyncio_mode = "auto"
 addopts = "-v --strict-markers"
+markers = [
+    "smoke: live LLM calls against Fireworks (requires FIREWORKS_API_KEY)",
+]

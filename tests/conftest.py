@@ -1,3 +1,7 @@
+import pydantic_ai.models as _pai_models
+
+_pai_models.ALLOW_MODEL_REQUESTS = False
+
 from typing import AsyncIterator
 
 import pytest
@@ -39,7 +43,6 @@ async def client(db_pool: None, database_url: str) -> AsyncIterator[AsyncClient]
     from app.content_registry.registry import init_registry
     from app.main import app
 
-    # ASGITransport does not trigger lifespan; initialise dependencies explicitly.
     init_registry(Path("content"))
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac
