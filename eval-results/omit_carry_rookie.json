@@ -2,7 +2,7 @@
   "name": "Omit-Carry Rookie",
   "student_type": "omit_carry",
   "max_turns": 8,
-  "transcript": "  Tutor feedback: Let's try this problem: What is 25 + 36?\n  Tutor asks: What is 88 + 99?\nStudent: 177\n  Tutor feedback: You added the ones correctly, but is there something extra left over when the ones go above 9? What do we do with that extra ten?\n    → Evaluation: WRONG | misconception(s): omit_carry\n  Tutor asks: What is 6 + 9?\nStudent: 5\n  Tutor feedback: You added the ones correctly, but is there something extra left over when the ones go above 9? What do we do with that extra ten?\n    → Evaluation: WRONG | misconception(s): omit_carry\n  Tutor asks: What is 6 + 5?\nStudent: 1\n  Tutor feedback: You have been getting these wrong for a few tries now — that is perfectly okay! Let me connect you with a human tutor who can walk through this together with you.\n    → Evaluation: WRONG | misconception(s): omit_carry",
+  "transcript": "  Tutor feedback: Let's solve a two-digit addition problem together!\n  Tutor asks: What is 88 + 99?\nStudent: 177\n  Tutor feedback: You added the ones correctly, but is there something extra left over when the ones go above 9? What do we do with that extra ten?\n    → Evaluation: WRONG | misconception(s): omit_carry\n  Tutor asks: What is 6 + 7?\nStudent: 3\n  Tutor feedback: You added the ones correctly, but is there something extra left over when the ones go above 9? What do we do with that extra ten?\n    → Evaluation: WRONG | misconception(s): omit_carry\n  Tutor asks: What is 6 + 8?\nStudent: 4\n  Tutor feedback: You have been getting these wrong for a few tries now — that is perfectly okay! Let me connect you with a human tutor who can walk through this together with you.\n    → Evaluation: WRONG | misconception(s): omit_carry",
   "final_phase": "complete",
   "turn_count": 3,
   "socratic_quality": 2,
@@ -10,6 +10,6 @@
   "never_reveals_answer": true,
   "diagnoses_specifically": true,
   "overall_pass": false,
-  "rationale": "The tutor correctly names 'omit_carry' specifically and never reveals answers, but fails Socratically: after 6+9=5, the tutor repeats the identical generic question instead of dropping to simpler prerequisite (e.g., 'What is 9+1?'). After 6+5=1, the tutor abandons scaffolding entirely rather than building monotonically back up, escalating to human referral. The repeated identical feedback 'You added the ones correctly, but...' is also factually wrong for 6+5=1 where student did NOT add ones correctly.",
+  "rationale": "The tutor correctly names the 'omit_carry' misconception but fails to scaffold—after repeated errors on 6+7 and 6+8, the tutor jumps to human referral instead of dropping to simpler prerequisite (e.g., 'What is 6+4?' or 'What makes 10?'). The identical feedback 'You added the ones correctly...' is also inappropriate for 6+7=3 and 6+8=4 where the student did NOT add ones correctly, suggesting the tutor isn't actually listening to responses.",
   "failure_reason": null
 }
