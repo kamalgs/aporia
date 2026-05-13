@@ -1,5 +1,3 @@
-from dataclasses import dataclass
-
 import pytest
 from pydantic_ai.messages import ModelResponse, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel

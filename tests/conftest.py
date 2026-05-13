@@ -1,3 +1,10 @@
+import os as _os
+
+# Provide a dummy API key so AnthropicModel can be constructed at import time
+# without a real key. ALLOW_MODEL_REQUESTS=False below prevents actual API calls.
+if not _os.environ.get("ANTHROPIC_API_KEY"):
+    _os.environ["ANTHROPIC_API_KEY"] = "test-dummy-key"
+
 import pydantic_ai.models as _pai_models
 
 _pai_models.ALLOW_MODEL_REQUESTS = False

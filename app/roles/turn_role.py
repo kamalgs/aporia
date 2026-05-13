@@ -5,7 +5,6 @@ from pydantic import BaseModel, Field
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, UserPromptPart
 from pydantic_ai.models.anthropic import AnthropicModel
-from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from app.domain.content import Skill
 from app.domain.events import (
@@ -34,12 +33,8 @@ class TurnDeps:
     skill: Skill
 
 
-def _placeholder_model_fn(messages: list, info: AgentInfo) -> ModelResponse:  # pragma: no cover
-    raise RuntimeError("No model configured — pass model= to run_turn or use _turn_agent.override()")
-
-
 _turn_agent: Agent[TurnDeps, TurnOutput] = Agent(
-    model=FunctionModel(_placeholder_model_fn),
+    AnthropicModel(TURN_MODEL),
     output_type=TurnOutput,
     deps_type=TurnDeps,
 )
