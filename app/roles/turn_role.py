@@ -1,6 +1,11 @@
+from dataclasses import dataclass
 from typing import Any
 
-from anthropic import Anthropic
+from pydantic import BaseModel, Field
+from pydantic_ai import Agent, RunContext
+from pydantic_ai.messages import ModelMessage, ModelRequest, ModelResponse, TextPart, UserPromptPart
+from pydantic_ai.models.anthropic import AnthropicModel
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from app.domain.content import Skill
 from app.domain.events import (
@@ -14,50 +19,36 @@ from app.domain.events import (
 TURN_MODEL = "claude-haiku-4-5-20251001"
 TRANSCRIPT_WINDOW_SIZE = 10
 
-_EMIT_TURN_TOOL: dict[str, Any] = {
-    "name": "emit_turn",
-    "description": "Emit your next message to the learner and record your assessment of their response.",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "utterance": {
-                "type": "string",
-                "description": "The next message to send to the learner.",
-            },
-            "on_target": {
-                "type": "boolean",
-                "description": "True if the learner's response was correct or on-track.",
-            },
-            "matched_markers": {
-                "type": "array",
-                "items": {"type": "string"},
-                "description": "Names of common mistake patterns that match the learner's response.",
-            },
-            "affect": {
-                "type": "object",
-                "description": "Observed affective signals as float scores, e.g. {'confidence': 0.7}.",
-            },
-            "notes": {
-                "type": "string",
-                "description": "Optional free-form notes about this turn.",
-            },
-        },
-        "required": ["utterance", "on_target"],
-    },
-}
+
+class TurnOutput(BaseModel):
+    utterance: str
+    on_target: bool
+    matched_markers: list[str] = Field(default_factory=list)
+    affect: dict[str, float] = Field(default_factory=dict)
+    notes: str = ""
 
 
-def _format_transcript(window: list[TranscriptEvent]) -> list[dict[str, str]]:
-    messages = []
-    for event in window:
-        if isinstance(event, LearnerTextEvent):
-            messages.append({"role": "user", "content": event.text})
-        elif isinstance(event, UtteranceEvent):
-            messages.append({"role": "assistant", "content": event.text})
-    return messages
+@dataclass
+class TurnDeps:
+    intent: CoachIntentEvent
+    skill: Skill
 
 
-def _build_system_prompt(intent: CoachIntentEvent, skill: Skill) -> str:
+def _placeholder_model_fn(messages: list, info: AgentInfo) -> ModelResponse:  # pragma: no cover
+    raise RuntimeError("No model configured — pass model= to run_turn or use _turn_agent.override()")
+
+
+_turn_agent: Agent[TurnDeps, TurnOutput] = Agent(
+    model=FunctionModel(_placeholder_model_fn),
+    output_type=TurnOutput,
+    deps_type=TurnDeps,
+)
+
+
+@_turn_agent.instructions
+def _turn_instructions(ctx: RunContext[TurnDeps]) -> str:
+    intent = ctx.deps.intent
+    skill = ctx.deps.skill
     mistakes = "\n".join(f"- {m}" for m in skill.common_mistakes) or "None documented."
     lines = [
         "You are a skilled tutor working one-on-one with a learner on the following skill.",
@@ -79,11 +70,21 @@ def _build_system_prompt(intent: CoachIntentEvent, skill: Skill) -> str:
         lines.append(f"  Tone: {intent.tone_note}")
     lines += [
         "",
-        "Use the emit_turn tool to send your next message and record your assessment.",
+        "Respond with your next message and assessment of the learner's response.",
         "Keep responses short — one or two sentences maximum.",
         "If the learner's input is their first message, greet them briefly and ask an opening question.",
     ]
     return "\n".join(lines)
+
+
+def _transcript_to_messages(window: list[TranscriptEvent]) -> list[ModelMessage]:
+    messages: list[ModelMessage] = []
+    for event in window:
+        if isinstance(event, LearnerTextEvent):
+            messages.append(ModelRequest(parts=[UserPromptPart(content=event.text)]))
+        elif isinstance(event, UtteranceEvent):
+            messages.append(ModelResponse(parts=[TextPart(content=event.text)]))
+    return messages
 
 
 async def run_turn(
@@ -91,28 +92,26 @@ async def run_turn(
     skill: Skill,
     transcript_window: list[TranscriptEvent],
     learner_text: str,
-    llm_client: Any,
+    model: Any = None,
 ) -> tuple[UtteranceEvent, TurnSignalEvent]:
     window = transcript_window[-TRANSCRIPT_WINDOW_SIZE:]
-    messages = _format_transcript(window)
-    messages.append({"role": "user", "content": learner_text or "(no input)"})
-
-    response = llm_client.messages.create(
-        model=TURN_MODEL,
-        system=_build_system_prompt(intent, skill),
-        messages=messages,
-        tools=[_EMIT_TURN_TOOL],
-        tool_choice={"type": "any"},
-        max_tokens=512,
+    history = _transcript_to_messages(window)
+    deps = TurnDeps(intent=intent, skill=skill)
+    kwargs: dict[str, Any] = dict(
+        message_history=history,
+        deps=deps,
     )
+    if model is not None:
+        kwargs["model"] = model
 
-    tool_input = response.content[0].input
-    utterance = UtteranceEvent(text=tool_input["utterance"], skill_id=skill.id)
+    result = await _turn_agent.run(learner_text or "(no input)", **kwargs)
+    out = result.output
+    utterance = UtteranceEvent(text=out.utterance, skill_id=skill.id)
     signal = TurnSignalEvent(
-        on_target=tool_input["on_target"],
-        matched_markers=tool_input.get("matched_markers", []),
-        affect=tool_input.get("affect", {}),
-        notes=tool_input.get("notes", ""),
+        on_target=out.on_target,
+        matched_markers=out.matched_markers,
+        affect=out.affect,
+        notes=out.notes,
     )
     return utterance, signal
 
@@ -121,25 +120,16 @@ async def run_turn_for_speculation(
     intent: CoachIntentEvent,
     skill: Skill,
     mistake_text: str,
-    llm_client: Any,
+    model: Any = None,
 ) -> str:
-    """Pre-generate the tutor's response for a specific known mistake.
+    deps = TurnDeps(intent=intent, skill=skill)
+    kwargs: dict[str, Any] = dict(deps=deps)
+    if model is not None:
+        kwargs["model"] = model
 
-    The learner input is simulated as the mistake text so the LLM crafts
-    the corrective response in advance. Returns the utterance string only;
-    the signal is constructed deterministically from the cache key on a hit.
-    """
-    messages = [{"role": "user", "content": mistake_text}]
-    response = llm_client.messages.create(
-        model=TURN_MODEL,
-        system=_build_system_prompt(intent, skill),
-        messages=messages,
-        tools=[_EMIT_TURN_TOOL],
-        tool_choice={"type": "any"},
-        max_tokens=256,
-    )
-    return response.content[0].input["utterance"]
+    result = await _turn_agent.run(mistake_text, **kwargs)
+    return result.output.utterance
 
 
-def get_llm_client() -> Anthropic:
-    return Anthropic()
+def get_turn_model() -> AnthropicModel:
+    return AnthropicModel(TURN_MODEL)

@@ -43,6 +43,7 @@ async def client(db_pool: None, database_url: str) -> AsyncIterator[AsyncClient]
     from app.content_registry.registry import init_registry
     from app.main import app
 
+    # ASGITransport does not trigger lifespan; initialise dependencies explicitly.
     init_registry(Path("content"))
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac

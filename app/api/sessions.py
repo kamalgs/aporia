@@ -22,7 +22,7 @@ from app.roles.identity_role import get_identity_llm_client, run_identity
 from app.roles.session_role import get_session_llm_client, run_session
 from app.roles.state_updater import apply_turn_signal
 from app.roles.trigger_policy import should_run_session_role
-from app.roles.turn_role import get_llm_client, run_turn, run_turn_for_speculation
+from app.roles.turn_role import get_turn_model, run_turn, run_turn_for_speculation
 from app.speculation import cache as speculation_cache
 from app.store import learners as learners_store
 from app.store import sessions as sessions_store
@@ -91,7 +91,7 @@ async def _speculate_branches(
     session_id: str,
     intent: CoachIntentEvent,
     skill: Skill,
-    llm_client: Any,
+    model: Any,
 ) -> None:
     """Pre-generate utterances for each common mistake. Best-effort; never blocks the main path."""
     for idx, mistake_text in enumerate(skill.common_mistakes):
@@ -100,7 +100,7 @@ async def _speculate_branches(
                 intent=intent,
                 skill=skill,
                 mistake_text=mistake_text,
-                llm_client=llm_client,
+                model=model,
             )
             speculation_cache().put(
                 session_id,
@@ -330,7 +330,7 @@ async def _run_turn_with_speculation(
     intent: CoachIntentEvent,
     skill: Skill,
     learner_text: str,
-    turn_llm: Any,
+    turn_model: Any,
 ) -> tuple[UtteranceEvent, TurnSignalEvent]:
     """Return utterance + signal from cache if available, otherwise live LLM call."""
     cached = _check_speculation(session_id, intent, skill, learner_text)
@@ -341,7 +341,7 @@ async def _run_turn_with_speculation(
         skill=skill,
         transcript_window=session.transcript,
         learner_text=learner_text,
-        llm_client=turn_llm,
+        model=turn_model,
     )
 
 
@@ -394,7 +394,7 @@ async def _resolve_intent_and_skill(
 async def session_turn(
     session_id: str,
     body: TurnRequest,
-    turn_llm=Depends(get_llm_client),
+    turn_model=Depends(get_turn_model),
     session_llm=Depends(get_session_llm_client),
 ) -> TurnResponse:
     session = await sessions_store.get(session_id)
@@ -419,7 +419,7 @@ async def session_turn(
     session = await sessions_store.get(session_id)
 
     utterance_event, signal_event = await _run_turn_with_speculation(
-        session_id, session, current_intent, skill, body.text, turn_llm
+        session_id, session, current_intent, skill, body.text, turn_model
     )
 
     await sessions_store.append_event(session_id, utterance_event)
@@ -435,7 +435,7 @@ async def session_turn(
         skill_state=updated_state[current_intent.skill_id],
     )
 
-    asyncio.create_task(_speculate_branches(session_id, current_intent, skill, turn_llm))
+    asyncio.create_task(_speculate_branches(session_id, current_intent, skill, turn_model))
 
     return TurnResponse(
         utterance=utterance_event.text,
@@ -447,7 +447,7 @@ async def session_turn(
 async def session_turn_stream(
     session_id: str,
     body: TurnRequest,
-    turn_llm=Depends(get_llm_client),
+    turn_model=Depends(get_turn_model),
     session_llm=Depends(get_session_llm_client),
 ) -> StreamingResponse:
     """Same logic as /turn but streams the utterance word-by-word as SSE token events."""
@@ -473,7 +473,7 @@ async def session_turn_stream(
     session = await sessions_store.get(session_id)
 
     utterance_event, signal_event = await _run_turn_with_speculation(
-        session_id, session, current_intent, skill, body.text, turn_llm
+        session_id, session, current_intent, skill, body.text, turn_model
     )
 
     await sessions_store.append_event(session_id, utterance_event)
@@ -489,7 +489,7 @@ async def session_turn_stream(
         skill_state=updated_state[current_intent.skill_id],
     )
 
-    asyncio.create_task(_speculate_branches(session_id, current_intent, skill, turn_llm))
+    asyncio.create_task(_speculate_branches(session_id, current_intent, skill, turn_model))
 
     utterance_text = utterance_event.text
     signal_dict = signal_event.model_dump(mode="json")

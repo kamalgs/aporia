@@ -1,52 +1,42 @@
 import json
-from types import SimpleNamespace
 
 import pytest
 from httpx import AsyncClient
+from pydantic_ai.messages import ModelResponse, ToolCallPart
+from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from app.roles.session_role import get_session_llm_client
-from app.roles.turn_role import get_llm_client
+from app.roles.turn_role import get_turn_model
 
 
-def _make_fake_turn_llm(utterance: str = "What is 47 + 36?", on_target: bool = True):
-    class _FakeMessages:
-        def create(self, **kwargs):
-            return SimpleNamespace(
-                content=[
-                    SimpleNamespace(
-                        type="tool_use",
-                        input={
-                            "utterance": utterance,
-                            "on_target": on_target,
-                            "matched_markers": [],
-                            "affect": {},
-                            "notes": "",
-                        },
-                    )
-                ]
-            )
-
-    class _FakeLLM:
-        messages = _FakeMessages()
-
-    return _FakeLLM()
+def _make_fake_turn_model(utterance: str = "What is 47 + 36?", on_target: bool = True) -> FunctionModel:
+    def _fn(messages: list, info: AgentInfo) -> ModelResponse:
+        tool_name = info.output_tools[0].name
+        return ModelResponse(parts=[ToolCallPart(tool_name, {
+            "utterance": utterance,
+            "on_target": on_target,
+            "matched_markers": [],
+            "affect": {},
+            "notes": "",
+        })])
+    return FunctionModel(_fn)
 
 
 def _make_fake_session_llm(goal: str = "warm_up", skill_id: str = "add-1digit"):
+    from types import SimpleNamespace
+
     class _FakeMessages:
         def create(self, **kwargs):
             return SimpleNamespace(
-                content=[
-                    SimpleNamespace(
-                        type="tool_use",
-                        input={
-                            "goal": goal,
-                            "skill_id": skill_id,
-                            "difficulty_hint": "same",
-                            "rationale": "Starting warm up.",
-                        },
-                    )
-                ]
+                content=[SimpleNamespace(
+                    type="tool_use",
+                    input={
+                        "goal": goal,
+                        "skill_id": skill_id,
+                        "difficulty_hint": "same",
+                        "rationale": "Starting warm up.",
+                    },
+                )]
             )
 
     class _FakeLLM:
@@ -56,14 +46,14 @@ def _make_fake_session_llm(goal: str = "warm_up", skill_id: str = "add-1digit"):
 
 
 @pytest.fixture
-def fake_llm():
-    return _make_fake_turn_llm()
+def fake_turn_model():
+    return _make_fake_turn_model()
 
 
 @pytest.fixture
-def client_with_fake_llm(client: AsyncClient, fake_llm):
+def client_with_fake_llm(client: AsyncClient, fake_turn_model):
     from app.main import app
-    app.dependency_overrides[get_llm_client] = lambda: fake_llm
+    app.dependency_overrides[get_turn_model] = lambda: fake_turn_model
     app.dependency_overrides[get_session_llm_client] = lambda: _make_fake_session_llm()
     yield client
     app.dependency_overrides.clear()
