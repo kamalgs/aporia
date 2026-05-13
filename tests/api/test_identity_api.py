@@ -90,8 +90,6 @@ async def test_end_session_uses_prior_portrait(learner_and_session) -> None:
     from app.main import app
     received_instructions = {}
 
-    from app.roles.identity_role import _identity_agent
-
     def _capturing_identity_model() -> FunctionModel:
         def _fn(messages: list, info: AgentInfo) -> ModelResponse:
             # In PydanticAI, instructions from @agent.instructions appear on ModelRequest.instructions
