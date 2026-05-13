@@ -41,3 +41,4 @@ eval-results/
 
 # Misc
 *.log
+.playwright-mcp/

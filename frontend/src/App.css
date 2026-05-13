@@ -47,21 +47,58 @@ html, body, #root { height: 100%; font-family: -apple-system, BlinkMacSystemFont
   display: grid; place-items: center;
   font-weight: 700; font-size: 1.1rem;
 }
+.header-info { flex: 1; }
 .header-info h1 { font-size: 1rem; font-weight: 600; }
 .header-info .status { font-size: 0.75rem; opacity: 0.8; }
+.end-button {
+  padding: 0.35rem 0.85rem;
+  border: 1.5px solid rgba(255,255,255,0.7);
+  border-radius: 1rem;
+  background: transparent;
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  opacity: 0.85;
+  transition: opacity 0.15s;
+}
+.end-button:hover { opacity: 1; }
 
-/* ── Empty state ── */
-.chat-empty {
+/* ── Welcome screen ── */
+.welcome-view {
   flex: 1;
   display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1.5rem;
   padding: 2rem;
-  text-align: center;
-  color: var(--text-secondary);
 }
+.welcome-card {
+  background: #fff;
+  border-radius: 1rem;
+  padding: 2rem;
+  width: 100%;
+  max-width: 360px;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.1);
+  text-align: center;
+}
+.welcome-card h2 { font-size: 1.5rem; color: var(--header-bg); margin-bottom: 0.5rem; }
+.welcome-card p { color: var(--text-secondary); margin-bottom: 1.5rem; }
+.welcome-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.welcome-form label { font-size: 0.9rem; font-weight: 500; color: var(--text-primary); text-align: left; }
+.name-input {
+  padding: 0.65rem 1rem;
+  border: 1.5px solid #d1d7db;
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.name-input:focus { border-color: var(--send-bg); }
+.error-msg { font-size: 0.8rem; color: #e53e3e; }
 .start-button {
   padding: 0.75rem 2rem;
   border: none;
@@ -72,9 +109,11 @@ html, body, #root { height: 100%; font-family: -apple-system, BlinkMacSystemFont
   font-weight: 600;
   cursor: pointer;
   transition: opacity 0.2s;
+  margin-top: 0.25rem;
 }
-.start-button:hover { opacity: 0.9; }
-.start-button:active { opacity: 0.8; }
+.start-button:disabled { opacity: 0.5; cursor: not-allowed; }
+.start-button:not(:disabled):hover { opacity: 0.9; }
+.start-button:not(:disabled):active { opacity: 0.8; }
 
 /* ── Messages ── */
 .chat-messages {
@@ -94,7 +133,7 @@ html, body, #root { height: 100%; font-family: -apple-system, BlinkMacSystemFont
 }
 
 .message.tutor { align-self: flex-start; }
-.message.student { align-self: flex-end; }
+.message.learner { align-self: flex-end; }
 
 .message-bubble {
   padding: 0.5rem 0.75rem;
@@ -106,16 +145,27 @@ html, body, #root { height: 100%; font-family: -apple-system, BlinkMacSystemFont
 }
 
 .message.tutor .message-bubble { background: var(--tutor-bubble); border-top-left-radius: 2px; }
-.message.student .message-bubble { background: var(--student-bubble); border-top-right-radius: 2px; }
+.message.learner .message-bubble { background: var(--student-bubble); border-top-right-radius: 2px; }
 
-.message-time {
-  font-size: 0.65rem;
-  color: var(--text-secondary);
+.message-footer {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
   margin-top: 0.15rem;
   padding: 0 0.25rem;
 }
-.message.tutor .message-time { align-self: flex-start; }
-.message.student .message-time { align-self: flex-end; }
+.message.tutor .message-footer { align-self: flex-start; }
+.message.learner .message-footer { align-self: flex-end; }
+.message-time {
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+}
+.on-target-icon {
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+.on-target-icon.correct { color: #22c55e; }
+.on-target-icon.incorrect { color: #f97316; }
 
 /* ── Typing indicator ── */
 .typing { display: flex; gap: 0.25rem; padding: 0.6rem 0.75rem; }
@@ -132,29 +182,6 @@ html, body, #root { height: 100%; font-family: -apple-system, BlinkMacSystemFont
   40% { transform: scale(1); }
 }
 
-/* ── Question card ── */
-.question-card {
-  flex-shrink: 0;
-  padding: 0.75rem 1rem;
-  background: var(--question-bg);
-  border-top: 2px solid var(--question-border);
-  text-align: center;
-  z-index: 2;
-}
-.question-text {
-  font-size: 1.1rem;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-.question-card.handoff {
-  background: #fce7f3;
-  border-top-color: #ec4899;
-}
-.handoff-text {
-  font-size: 1rem;
-  font-weight: 500;
-  color: #9d174d;
-}
 
 /* ── Input bar ── */
 .chat-input-bar {

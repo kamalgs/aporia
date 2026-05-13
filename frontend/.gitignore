@@ -1,2 +1,4 @@
-frontend/test-results/
-frontend/test-results/
+node_modules/
+dist/
+test-results/
+.playwright-mcp/
