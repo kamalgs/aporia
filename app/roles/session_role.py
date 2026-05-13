@@ -1,7 +1,10 @@
 import json
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Literal
 
-from anthropic import Anthropic
+from pydantic import BaseModel
+from pydantic_ai import Agent, RunContext
+from pydantic_ai.models.anthropic import AnthropicModel
 
 from app.domain.content import CoachProfile, Program
 from app.domain.events import (
@@ -15,94 +18,77 @@ from app.domain.events import (
 SESSION_MODEL = "claude-sonnet-4-6"
 TRANSCRIPT_WINDOW_SIZE = 20
 
-_SET_INTENT_TOOL: dict[str, Any] = {
-    "name": "set_intent",
-    "description": "Set the coaching intent for the next phase of the session.",
-    "input_schema": {
-        "type": "object",
-        "properties": {
-            "goal": {
-                "type": "string",
-                "enum": ["warm_up", "probe", "teach", "drill", "consolidate", "rest", "wrap"],
-                "description": "The coaching goal for the next phase.",
-            },
-            "skill_id": {
-                "type": "string",
-                "description": "Which skill to focus on. Must be one of the program's skill_ids.",
-            },
-            "difficulty_hint": {
-                "type": "string",
-                "enum": ["easier", "same", "harder"],
-                "description": "Relative difficulty adjustment for the next questions.",
-            },
-            "rationale": {
-                "type": "string",
-                "description": "Brief explanation of why this intent was chosen (for logs and human-tutor view).",
-            },
-            "tone_note": {
-                "type": "string",
-                "description": "Optional tone adjustment for this phase (e.g. 'extra encouraging').",
-            },
-        },
-        "required": ["goal", "skill_id"],
-    },
-}
+
+class SessionOutput(BaseModel):
+    goal: Literal["warm_up", "probe", "teach", "drill", "consolidate", "rest", "wrap"]
+    skill_id: str
+    difficulty_hint: Literal["easier", "same", "harder"] | None = None
+    rationale: str = ""
+    tone_note: str | None = None
 
 
-def _build_session_prompt(
-    program: Program,
-    coach_profile: CoachProfile | None,
-    learner_portrait: str,
-    program_state: dict,
-    pending_guidance: str = "",
-) -> str:
-    skills_list = ", ".join(program.skill_ids)
-    mandatory_list = ", ".join(program.mandatory_skill_ids)
+@dataclass
+class SessionDeps:
+    program: Program
+    coach_profile: CoachProfile | None
+    learner_portrait: str
+    program_state: dict
+    pending_guidance: str = ""
+
+
+_session_agent: Agent[SessionDeps, SessionOutput] = Agent(
+    model=AnthropicModel(SESSION_MODEL),
+    output_type=SessionOutput,
+    deps_type=SessionDeps,
+)
+
+
+@_session_agent.instructions
+def _session_instructions(ctx: RunContext[SessionDeps]) -> str:
+    d = ctx.deps
+    skills_list = ", ".join(d.program.skill_ids)
+    mandatory_list = ", ".join(d.program.mandatory_skill_ids)
     lines = [
         "You are the session planner for a one-on-one tutoring session.",
         "",
-        f"PROGRAM: {program.title}",
+        f"PROGRAM: {d.program.title}",
         f"SKILLS AVAILABLE: {skills_list}",
         f"MANDATORY SKILLS: {mandatory_list}",
-        f"COMPLETION CRITERIA: {program.assessment_criteria}",
+        f"COMPLETION CRITERIA: {d.program.assessment_criteria}",
         "",
     ]
-    if coach_profile:
+    if d.coach_profile:
         lines += [
-            f"COACHING STYLE ({coach_profile.title}):",
-            f"  Tone: {coach_profile.tone}",
-            f"  Pacing: {coach_profile.pacing}",
+            f"COACHING STYLE ({d.coach_profile.title}):",
+            f"  Tone: {d.coach_profile.tone}",
+            f"  Pacing: {d.coach_profile.pacing}",
             "",
         ]
-    if learner_portrait:
-        lines += ["LEARNER PORTRAIT:", learner_portrait, ""]
-    if program_state:
-        lines += ["PROGRAM STATE (per-skill progress):", json.dumps(program_state, indent=2), ""]
-    if pending_guidance:
-        lines += ["TUTOR GUIDANCE (incorporate into your decision):", pending_guidance, ""]
+    if d.learner_portrait:
+        lines += ["LEARNER PORTRAIT:", d.learner_portrait, ""]
+    if d.program_state:
+        lines += ["PROGRAM STATE (per-skill progress):", json.dumps(d.program_state, indent=2), ""]
+    if d.pending_guidance:
+        lines += ["TUTOR GUIDANCE (incorporate into your decision):", d.pending_guidance, ""]
     lines += [
         "Review the recent transcript and progress data above.",
         "Decide what to do next: which skill to focus on, what goal, and how hard.",
-        "Use set_intent to record your decision.",
     ]
     return "\n".join(lines)
 
 
-def _format_transcript_for_session(window: list[TranscriptEvent]) -> list[dict]:
-    messages = []
+def _format_transcript_for_session(window: list[TranscriptEvent]) -> str:
+    lines = []
     for event in window[-TRANSCRIPT_WINDOW_SIZE:]:
         if isinstance(event, LearnerTextEvent):
-            messages.append({"role": "user", "content": event.text})
+            lines.append(f"Learner: {event.text}")
         elif isinstance(event, UtteranceEvent):
-            messages.append({"role": "assistant", "content": event.text})
+            lines.append(f"Tutor: {event.text}")
         elif isinstance(event, TurnSignalEvent):
             label = "✓ on-target" if event.on_target else "✗ off-target"
             markers = ", ".join(event.matched_markers) if event.matched_markers else "none"
-            messages.append({
-                "role": "assistant",
-                "content": f"[Turn signal: {label}; markers: {markers}]",
-            })
-    return messages
+            lines.append(f"[Signal: {label}; markers: {markers}]")
+    return "\n".join(lines) if lines else "(session start — no turns yet)"
 
 
 async def run_session(
@@ -111,34 +97,32 @@ async def run_session(
     learner_portrait: str,
     program_state: dict,
     transcript_window: list[TranscriptEvent],
-    llm_client: Any,
+    llm_client: Any = None,
     pending_guidance: str = "",
 ) -> CoachIntentEvent:
     """Call the session-level LLM role and return a CoachIntentEvent."""
-    messages = _format_transcript_for_session(transcript_window)
-    if not messages:
-        messages = [{"role": "user", "content": "(session start — no turns yet)"}]
-
-    response = llm_client.messages.create(
-        model=SESSION_MODEL,
-        system=_build_session_prompt(
-            program, coach_profile, learner_portrait, program_state, pending_guidance
-        ),
-        messages=messages,
-        tools=[_SET_INTENT_TOOL],
-        tool_choice={"type": "any"},
-        max_tokens=512,
+    deps = SessionDeps(
+        program=program,
+        coach_profile=coach_profile,
+        learner_portrait=learner_portrait,
+        program_state=program_state,
+        pending_guidance=pending_guidance,
     )
+    transcript_text = _format_transcript_for_session(transcript_window)
+    kwargs: dict[str, Any] = dict(deps=deps)
+    if llm_client is not None:
+        kwargs["model"] = llm_client
 
-    tool_input = response.content[0].input
+    result = await _session_agent.run(transcript_text, **kwargs)
+    out = result.output
     return CoachIntentEvent(
-        goal=tool_input["goal"],
-        skill_id=tool_input["skill_id"],
-        difficulty_hint=tool_input.get("difficulty_hint"),
-        rationale=tool_input.get("rationale", ""),
-        tone_note=tool_input.get("tone_note"),
+        goal=out.goal,
+        skill_id=out.skill_id,
+        difficulty_hint=out.difficulty_hint,
+        rationale=out.rationale or "",
+        tone_note=out.tone_note,
     )
 
 
-def get_session_llm_client() -> Anthropic:
-    return Anthropic()
+def get_session_model() -> AnthropicModel:
+    return AnthropicModel(SESSION_MODEL)

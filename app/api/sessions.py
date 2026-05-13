@@ -19,7 +19,7 @@ from app.domain.events import (
 )
 from app.domain.session import Session, SessionCreate
 from app.roles.identity_role import get_identity_llm_client, run_identity
-from app.roles.session_role import get_session_llm_client, run_session
+from app.roles.session_role import get_session_model, run_session
 from app.roles.state_updater import apply_turn_signal
 from app.roles.trigger_policy import should_run_session_role
 from app.roles.turn_role import get_turn_model, run_turn, run_turn_for_speculation
@@ -350,7 +350,7 @@ async def _resolve_intent_and_skill(
     session,
     learner,
     program_state: dict,
-    session_llm: Any,
+    session_model: Any,
 ) -> tuple[CoachIntentEvent, Skill, Any]:
     """Run the session role if needed, then return (intent, skill, updated_session)."""
     if should_run_session_role(session.transcript, program_state):
@@ -366,7 +366,7 @@ async def _resolve_intent_and_skill(
             learner_portrait=learner.portrait_md,
             program_state=program_state,
             transcript_window=session.transcript,
-            llm_client=session_llm,
+            llm_client=session_model,
             pending_guidance=pending_guidance,
         )
         await sessions_store.append_event(session_id, intent)
@@ -395,7 +395,7 @@ async def session_turn(
     session_id: str,
     body: TurnRequest,
     turn_model=Depends(get_turn_model),
-    session_llm=Depends(get_session_llm_client),
+    session_model=Depends(get_session_model),
 ) -> TurnResponse:
     session = await sessions_store.get(session_id)
     if session is None:
@@ -410,7 +410,7 @@ async def session_turn(
 
     program_state = learner.program_states.get(session.program_id, {})
     current_intent, skill, session = await _resolve_intent_and_skill(
-        session_id, session, learner, program_state, session_llm
+        session_id, session, learner, program_state, session_model
     )
 
     learner_evt = LearnerTextEvent(text=body.text)
@@ -448,7 +448,7 @@ async def session_turn_stream(
     session_id: str,
     body: TurnRequest,
     turn_model=Depends(get_turn_model),
-    session_llm=Depends(get_session_llm_client),
+    session_model=Depends(get_session_model),
 ) -> StreamingResponse:
     """Same logic as /turn but streams the utterance word-by-word as SSE token events."""
     session = await sessions_store.get(session_id)
@@ -464,7 +464,7 @@ async def session_turn_stream(
 
     program_state = learner.program_states.get(session.program_id, {})
     current_intent, skill, session = await _resolve_intent_and_skill(
-        session_id, session, learner, program_state, session_llm
+        session_id, session, learner, program_state, session_model
     )
 
     learner_evt = LearnerTextEvent(text=body.text)

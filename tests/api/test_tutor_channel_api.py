@@ -6,7 +6,7 @@ from pydantic_ai.messages import ModelResponse, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
 from app.roles.identity_role import get_identity_llm_client
-from app.roles.session_role import get_session_llm_client
+from app.roles.session_role import get_session_model
 from app.roles.turn_role import get_turn_model
 
 
@@ -23,17 +23,13 @@ def _fake_turn_llm():
     return FunctionModel(_fn)
 
 
-def _fake_session_llm():
-    class _FakeMessages:
-        def create(self, **kwargs):
-            return SimpleNamespace(content=[SimpleNamespace(
-                type="tool_use",
-                input={"goal": "warm_up", "skill_id": "add-1digit",
-                       "difficulty_hint": "same", "rationale": "test"},
-            )])
-    class _FakeLLM:
-        messages = _FakeMessages()
-    return _FakeLLM()
+def _fake_session_model() -> FunctionModel:
+    def _fn(messages: list, info: AgentInfo) -> ModelResponse:
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, {
+            "goal": "warm_up", "skill_id": "add-1digit",
+            "difficulty_hint": "same", "rationale": "test", "tone_note": None,
+        })])
+    return FunctionModel(_fn)
 
 
 def _fake_identity_llm():
@@ -51,7 +47,7 @@ def _fake_identity_llm():
 def client_all_fakes(client: AsyncClient):
     from app.main import app
     app.dependency_overrides[get_turn_model] = _fake_turn_llm
-    app.dependency_overrides[get_session_llm_client] = _fake_session_llm
+    app.dependency_overrides[get_session_model] = _fake_session_model
     app.dependency_overrides[get_identity_llm_client] = _fake_identity_llm
     yield client
     app.dependency_overrides.clear()
@@ -94,11 +90,11 @@ async def test_whisper_triggers_session_role_on_next_turn(channel_setup) -> None
     from app.main import app
     call_count = {"n": 0}
 
-    def _counting_session_llm():
+    def _counting_session_model():
         call_count["n"] += 1
-        return _fake_session_llm()
+        return _fake_session_model()
 
-    app.dependency_overrides[get_session_llm_client] = _counting_session_llm
+    app.dependency_overrides[get_session_model] = _counting_session_model
 
     client, tutor_id, _, session_id = channel_setup
     await client.post(f"/sessions/{session_id}/turn", json={"text": "hi"})
@@ -114,26 +110,23 @@ async def test_whisper_content_reaches_session_role_prompt(channel_setup) -> Non
     from app.main import app
     captured = {}
 
-    def _capturing_session_llm():
-        class _FakeMessages:
-            def create(self, **kwargs):
-                captured["system"] = kwargs.get("system", "")
-                return SimpleNamespace(content=[SimpleNamespace(
-                    type="tool_use",
-                    input={"goal": "teach", "skill_id": "add-1digit",
-                           "difficulty_hint": "easier", "rationale": "tutor said so"},
-                )])
-        class _FakeLLM:
-            messages = _FakeMessages()
-        return _FakeLLM()
+    def _capturing_session_fn(messages: list, info: AgentInfo) -> ModelResponse:
+        captured["instructions"] = messages[0].instructions if messages else ""
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, {
+            "goal": "teach", "skill_id": "add-1digit",
+            "difficulty_hint": "easier", "rationale": "tutor said so", "tone_note": None,
+        })])
 
-    app.dependency_overrides[get_session_llm_client] = _capturing_session_llm
+    def _capturing_session_model():
+        return FunctionModel(_capturing_session_fn)
+
+    app.dependency_overrides[get_session_model] = _capturing_session_model
 
     client, tutor_id, _, session_id = channel_setup
     await client.post(f"/sessions/{session_id}/whisper",
                       json={"tutor_id": tutor_id, "content": "UNIQUE_WHISPER_MARKER"})
     await client.post(f"/sessions/{session_id}/turn", json={"text": "hi"})
-    assert "UNIQUE_WHISPER_MARKER" in captured.get("system", "")
+    assert "UNIQUE_WHISPER_MARKER" in captured.get("instructions", "")
 
 
 # ── Steer tests ──────────────────────────────────────────────────────────────

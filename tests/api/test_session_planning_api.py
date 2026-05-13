@@ -5,7 +5,7 @@ from httpx import AsyncClient
 from pydantic_ai.messages import ModelResponse, ToolCallPart
 from pydantic_ai.models.function import AgentInfo, FunctionModel
 
-from app.roles.session_role import get_session_llm_client
+from app.roles.session_role import get_session_model
 from app.roles.turn_role import get_turn_model
 
 
@@ -22,28 +22,20 @@ def _fake_turn_llm(on_target: bool = True):
     return FunctionModel(_fn)
 
 
-def _fake_session_llm(goal: str = "warm_up", skill_id: str = "add-1digit"):
-    class _FakeMessages:
-        def create(self, **kwargs):
-            return SimpleNamespace(
-                content=[SimpleNamespace(
-                    type="tool_use",
-                    input={"goal": goal, "skill_id": skill_id,
-                           "difficulty_hint": "same", "rationale": "test"},
-                )]
-            )
-
-    class _FakeLLM:
-        messages = _FakeMessages()
-
-    return _FakeLLM()
+def _fake_session_model(goal: str = "warm_up", skill_id: str = "add-1digit") -> FunctionModel:
+    def _fn(messages: list, info: AgentInfo) -> ModelResponse:
+        return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, {
+            "goal": goal, "skill_id": skill_id,
+            "difficulty_hint": "same", "rationale": "test", "tone_note": None,
+        })])
+    return FunctionModel(_fn)
 
 
 @pytest.fixture
 def client_planning(client: AsyncClient):
     from app.main import app
     app.dependency_overrides[get_turn_model] = lambda: _fake_turn_llm()
-    app.dependency_overrides[get_session_llm_client] = lambda: _fake_session_llm()
+    app.dependency_overrides[get_session_model] = lambda: _fake_session_model()
     yield client
     app.dependency_overrides.clear()
 
@@ -82,11 +74,11 @@ async def test_session_role_fires_after_mastery_threshold(session_setup) -> None
     from app.main import app
     call_count = {"n": 0}
 
-    def _counting_session_llm():
+    def _counting_session_model():
         call_count["n"] += 1
-        return _fake_session_llm(goal="drill", skill_id="add-2digit-carry")
+        return _fake_session_model(goal="drill", skill_id="add-2digit-carry")
 
-    app.dependency_overrides[get_session_llm_client] = _counting_session_llm
+    app.dependency_overrides[get_session_model] = _counting_session_model
 
     client, learner_id, session_id = session_setup
     # First turn: session role fires at start (call 1)
@@ -107,24 +99,16 @@ async def test_session_role_fires_after_struggle_threshold(session_setup) -> Non
     from app.main import app
     recorded_intents = []
 
-    def _recording_session_llm():
-        class _FakeMessages:
-            def create(self, **kwargs):
-                recorded_intents.append(True)
-                return SimpleNamespace(
-                    content=[SimpleNamespace(
-                        type="tool_use",
-                        input={"goal": "teach", "skill_id": "add-1digit",
-                               "difficulty_hint": "easier", "rationale": "too hard"},
-                    )]
-                )
+    def _recording_session_model():
+        recorded_intents.append(True)
+        def _fn(messages: list, info: AgentInfo) -> ModelResponse:
+            return ModelResponse(parts=[ToolCallPart(info.output_tools[0].name, {
+                "goal": "teach", "skill_id": "add-1digit",
+                "difficulty_hint": "easier", "rationale": "too hard", "tone_note": None,
+            })])
+        return FunctionModel(_fn)
 
-        class _FakeLLM:
-            messages = _FakeMessages()
-
-        return _FakeLLM()
-
-    app.dependency_overrides[get_session_llm_client] = _recording_session_llm
+    app.dependency_overrides[get_session_model] = _recording_session_model
 
     client, learner_id, session_id = session_setup
     await client.post(f"/sessions/{session_id}/turn", json={"text": "start"})
